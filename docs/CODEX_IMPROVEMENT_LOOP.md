@@ -16,7 +16,7 @@ The user's 2026-07-11 authorization permits disposable development evaluation. E
 
 - Base repository must be clean.
 - Each cycle starts in a new `codex/improvement-*` Git worktree and branch.
-- Codex runs noninteractively with the locally supported `gpt-5.5` model, high reasoning effort, `--sandbox workspace-write`, `approval_policy="never"`, structured output, ephemeral session storage, and ignored user configuration. Pinning the model avoids inheriting incompatible cached desktop-model settings.
+- Codex runs noninteractively with the locally supported `gpt-5.5` model, high reasoning effort, `--sandbox workspace-write`, the explicit Windows elevated sandbox backend, `approval_policy="never"`, structured output, ephemeral session storage, and ignored user configuration. Pinning the model and sandbox backend avoids inheriting incompatible cached desktop settings. JSONL events stream live into both controller evidence and CodexLightRunner output.
 - Only `tmp_2d_simulator_v37.py` and `test_tmp_2d_simulator_v37.py` may change.
 - Added subprocess, network, dynamic-code execution, shell, and deletion primitives are rejected.
 - Diff size and symlink changes are bounded or rejected.

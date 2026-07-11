@@ -123,3 +123,25 @@ def test_schema_requires_governed_fields():
     schema = json.loads((Path(__file__).parent / "schemas" / "codex_improvement_result.schema.json").read_text())
     assert set(schema["required"]) == {"category", "hypothesis", "summary", "changed_files", "tests_run", "risks"}
     assert schema["additionalProperties"] is False
+
+
+def test_streamed_command_persists_live_output(tmp_path, capsys):
+    result=controller.streamed_command([sys.executable,"-c","print('event-one'); print('event-two')"],tmp_path,30,tmp_path/"events.jsonl",tmp_path/"stderr.log")
+    assert result.return_code==0
+    assert (tmp_path/"events.jsonl").read_text().splitlines()==["event-one","event-two"]
+    assert "event-one" in capsys.readouterr().out
+
+
+def test_codex_cycle_pins_windows_sandbox_and_model(monkeypatch,tmp_path):
+    repo=fixture_repo(tmp_path); (repo/"schemas").mkdir(); (repo/"schemas"/"codex_improvement_result.schema.json").write_text("{}")
+    cycle=tmp_path/"cycle"; cycle.mkdir(); captured={}
+    def fake(args,cwd,timeout,stdout_path,stderr_path,env=None):
+        captured["args"]=[str(value) for value in args]
+        (cycle/"codex_final.json").write_text(json.dumps({"category":"no_change","hypothesis":"none","summary":"none","changed_files":[],"tests_run":[],"risks":[]}))
+        return controller.CommandResult(captured["args"],str(cwd),0,"","")
+    monkeypatch.setattr(controller,"streamed_command",fake)
+    controller.codex_cycle(config(repo,tmp_path),repo,cycle,"prompt")
+    joined=" ".join(captured["args"])
+    assert "gpt-5.5" in joined
+    assert 'windows.sandbox="elevated"' in joined
+    assert 'approval_policy="never"' in joined

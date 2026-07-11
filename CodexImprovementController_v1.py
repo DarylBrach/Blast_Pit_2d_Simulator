@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -93,6 +94,40 @@ def require_success(result: CommandResult, label: str) -> CommandResult:
     if result.return_code != 0:
         raise ImprovementError(f"{label} failed with code {result.return_code}: {result.stderr[-2000:]}")
     return result
+
+
+def streamed_command(args: Sequence[str | Path], cwd: Path, timeout: int, stdout_path: Path, stderr_path: Path,
+                     *, env: dict[str,str] | None=None) -> CommandResult:
+    values=[str(value) for value in args]
+    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform=="win32" else 0
+    proc=subprocess.Popen(values,cwd=str(cwd),env=env,text=True,encoding="utf-8",errors="replace",bufsize=1,
+                          stdout=subprocess.PIPE,stderr=subprocess.PIPE,creationflags=creationflags)
+    stdout_lines: list[str]=[]; stderr_lines: list[str]=[]
+
+    def drain(stream: Any,path: Path,rows: list[str],mirror: bool) -> None:
+        path.parent.mkdir(parents=True,exist_ok=True)
+        with path.open("w",encoding="utf-8",newline="\n") as handle:
+            for line in iter(stream.readline,""):
+                rows.append(line); handle.write(line); handle.flush()
+                if mirror:
+                    sys.stdout.write(line); sys.stdout.flush()
+
+    assert proc.stdout is not None and proc.stderr is not None
+    threads=[threading.Thread(target=drain,args=(proc.stdout,stdout_path,stdout_lines,True),daemon=True),
+             threading.Thread(target=drain,args=(proc.stderr,stderr_path,stderr_lines,False),daemon=True)]
+    for thread in threads: thread.start()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        if sys.platform=="win32":
+            subprocess.run(["taskkill","/PID",str(proc.pid),"/T","/F"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
+        else:
+            proc.terminate()
+        proc.wait(timeout=15)
+        raise
+    finally:
+        for thread in threads: thread.join(timeout=5)
+    return CommandResult(values,str(cwd),int(proc.returncode),"".join(stdout_lines),"".join(stderr_lines))
 
 
 def git(config: ControllerConfig, args: Sequence[str], cwd: Path | None = None, timeout: int = 120) -> CommandResult:
@@ -223,12 +258,10 @@ def codex_cycle(config: ControllerConfig, worktree: Path, cycle_dir: Path, promp
     args = [
         config.codex, "exec", "--cd", worktree, "--sandbox", "workspace-write", "--model", config.model,
         "--ephemeral", "--ignore-user-config", "--json",
-        "-c", 'approval_policy="never"', "-c", 'model_reasoning_effort="high"', "--output-schema", schema,
+        "-c", 'windows.sandbox="elevated"', "-c", 'approval_policy="never"', "-c", 'model_reasoning_effort="high"', "--output-schema", schema,
         "--output-last-message", final_output, prompt,
     ]
-    result = command(config, args, worktree, config.codex_timeout_seconds, env=os.environ.copy())
-    (cycle_dir / "codex_events.jsonl").write_text(result.stdout, encoding="utf-8")
-    (cycle_dir / "codex_stderr.log").write_text(result.stderr, encoding="utf-8")
+    result = streamed_command(args,worktree,config.codex_timeout_seconds,cycle_dir/"codex_events.jsonl",cycle_dir/"codex_stderr.log",env=os.environ.copy())
     atomic_json(cycle_dir / "codex_command.json", {"command": [str(value) for value in args[:-1]] + ["<prompt>"], "return_code": result.return_code})
     require_success(result, "codex exec")
     try:
