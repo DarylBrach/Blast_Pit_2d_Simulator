@@ -413,9 +413,31 @@ def create_worktree(config: ControllerConfig, base_ref: str, branch: str, worktr
 
 def prompt_for_cycle(base_score: dict[str, Any], production: dict[str, Any], cycle: int,
                      prior_cycles: Sequence[dict[str,Any]] = ()) -> str:
-    lessons=[{"cycle":item.get("cycle"),"status":item.get("status"),"hypothesis":item.get("codex_decision",{}).get("hypothesis"),
-              "summary":item.get("codex_decision",{}).get("summary"),"risks":item.get("codex_decision",{}).get("risks",[]),
-              "reasons":item.get("reasons",[]),"candidate_score":item.get("candidate_score")} for item in prior_cycles]
+    def bounded(value: Any, limit: int) -> str | None:
+        if value is None:
+            return None
+        text = " ".join(str(value).split())
+        return text if len(text) <= limit else text[:limit - 3] + "..."
+
+    def score_metrics(value: Any) -> dict[str, Any] | None:
+        if not isinstance(value, dict):
+            return None
+        return {key: value.get(key) for key in ("cvar", "mean", "standard_mean", "early_extinction_rate")}
+
+    lessons=[]
+    for item in prior_cycles:
+        decision=item.get("codex_decision",{})
+        lessons.append({
+            "status":item.get("status"),
+            "hypothesis":bounded(decision.get("hypothesis"),120),
+            "summary":bounded(decision.get("summary"),120),
+            "risks":[bounded(value,100) for value in decision.get("risks",[])[:1]],
+            "gate_failures":[bounded(value,120) for value in item.get("reasons",[])[:1]],
+            "score":score_metrics(item.get("candidate_score")),
+        })
+    trusted_score={key:base_score.get(key) for key in (
+        "cvar","mean","standard_mean","challenge_mean","early_extinction_rate","policy_hash","score_seed_hash"
+    )}
     return f"""You are improving the Blast_Pit v37 training process in an isolated candidate Git worktree.
 
 Mission: make ONE minimal, technically justified improvement to tmp_2d_simulator_v37.py based on the retained production telemetry, and add or update focused tests in test_tmp_2d_simulator_v37.py.
@@ -427,7 +449,7 @@ Production evidence:
 - policy hash: {production.get('hof_policy_hash')}
 
 Trusted development baseline:
-{json.dumps(base_score, sort_keys=True)}
+{json.dumps(trusted_score, sort_keys=True)}
 
 Cycle: {cycle}
 

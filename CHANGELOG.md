@@ -4,6 +4,7 @@
 - Bound the controller to an expiring parent human authorization and explicitly labeled disposable fixture records as controller development delegations.
 - Added an eight-hour supervisor/authorization ceiling, minimal and redacted Codex environment, raw-filesystem comparison, pre/post production evidence, and recursive SHA-256 evidence sealing.
 - Carried accepted and rejected lessons across multiple completed controller runs, including summaries, risks, scores, and raw-gate failures.
+- Compacted multi-run lessons to decision-relevant metrics and bounded text so Windows can launch Codex reliably.
 
 ## v35
 
