@@ -11,3 +11,5 @@ Report suspected artifact tampering by retaining the complete experiment directo
 v36-specific checkpoint, approval, audit, archive-export, and release boundaries are documented in [docs/V36_SECURITY.md](docs/V36_SECURITY.md). The scoped v36 approval is local and unsigned; it cannot override a failed terminal comparison.
 
 v37-specific robustness, committed-audit-seed, specialist-bank, and three-way comparison boundaries are documented in [docs/V37_SECURITY.md](docs/V37_SECURITY.md).
+
+The eight-hour launcher requires a clean Git worktree, captures dependency and input hashes, disables Ollama, uses zero automatic retries, and scopes its kill switch to one experiment. These controls improve provenance but do not create an OS sandbox. Do not place credentials in runner environment overrides or evidence; use a dedicated low-privilege account or VM for stronger isolation.

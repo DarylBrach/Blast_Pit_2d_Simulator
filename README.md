@@ -45,3 +45,5 @@ This local simulator performs no network or subprocess operations. It is not an 
 The governed QD-PPO v36 lifecycle and retained experiment are documented separately in [README_v36.md](README_v36.md). v36 has not replaced or been released over v35; its current identical-seed comparison did not clear the v35 release baseline.
 
 The robustness-focused v37 experiment is documented in [README_v37.md](README_v37.md). It is a new v36-bootstrap lineage and also failed its empirical release gate.
+
+The governed v37 eight-hour operator workflow is [docs/V37_OPERATIONS.md](docs/V37_OPERATIONS.md). Use `run_v37_8h.ps1 -DryRun` first. The launcher is deliberately approval-gated and will not reuse an older experiment's authorization.

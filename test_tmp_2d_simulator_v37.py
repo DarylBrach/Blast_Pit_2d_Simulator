@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from unittest.mock import patch
 from dataclasses import asdict
 from pathlib import Path
 
@@ -63,6 +64,28 @@ class CriticTests(unittest.TestCase):
 
 
 class ArtifactTests(unittest.TestCase):
+    def test_eight_hour_seed_suite_and_approval_are_exactly_scoped(self):
+        import json
+        seeds=[int(x) for x in Path("audit_seeds_v37_8h_001_committed.txt").read_text().splitlines()]
+        approval=json.loads(Path("approval_v37_8h_001.json").read_text())
+        self.assertEqual(len(seeds),64); self.assertEqual(len(set(seeds)),64)
+        self.assertEqual(approval["experiment_id"],"robustness-v37-8h-001")
+        self.assertEqual(approval["approved_total_generations"],100)
+        self.assertEqual(approval["approved_max_runtime_seconds"],28200)
+        self.assertFalse(approval["release_authorized_conditionally"])
+
+    def test_approval_rejects_contradictory_declared_source_hash(self):
+        import json
+        source=Path("artifacts/v36/qdppo-evaluation-001/evolution_state_v36.npz")
+        seed=Path("audit_seeds_v37_8h_001_committed.txt")
+        simulation=v37.v35.SimulationConfig(generations=100,population_size=8,elite_count=2,child_count=5,immigrant_count=1,trials=2,challenge_trials=3,validation_trials=5,max_frames=1000)
+        fingerprint=v37.experiment_fingerprint(source,simulation,v37.v36.PPOConfig(rollout_frames=256,update_epochs=2,minibatch_size=64),v37.RobustnessConfig(audit_trials=64),seed)
+        record=json.loads(Path("approval_v37_8h_001.json").read_text()); record["source_v36_checkpoint_sha256"]="0"*64
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/"approval.json"; path.write_text(json.dumps(record))
+            with self.assertRaisesRegex(ValueError,"source_v36_checkpoint_sha256 mismatch"):
+                v37.load_approval(path,"robustness-v37-8h-001",fingerprint,"train",source=source,audit_seed_file=seed,planned_generations=100,max_runtime_seconds=28200)
+
     def test_approval_is_scoped_and_unsigned(self):
         import json
         record=json.loads(Path("approval_v37.json").read_text())
@@ -72,6 +95,27 @@ class ArtifactTests(unittest.TestCase):
     def test_parser_has_train_status_audit(self):
         parser=v37.build_parser()
         self.assertEqual(parser.parse_args(["status","--checkpoint","x.npz"]).command,"status")
+        args=parser.parse_args(["train","--experiment-id","x","--source-v36","v36.npz","--audit-seed-file","seeds.txt","--resume","resume.npz","--max-runtime-seconds","28200"])
+        self.assertEqual(args.resume,Path("resume.npz")); self.assertEqual(args.max_runtime_seconds,28200)
+
+    def test_runtime_budget_stops_only_at_generation_boundary(self):
+        with patch.object(v37.time,"monotonic",return_value=101.0):
+            self.assertFalse(v37.runtime_allows_generation(0.0,400,300,None))
+            self.assertTrue(v37.runtime_allows_generation(0.0,500,300,None))
+        with patch.object(v37.time,"monotonic",return_value=250.0):
+            self.assertFalse(v37.runtime_allows_generation(0.0,500,10,220.0))
+
+    def test_generation_journal_validates_hash_chain(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/"generations.jsonl"; records=[]; previous="0"*64
+            for generation in range(2):
+                record={"generation":generation,"previous_record_hash":previous}; record["record_hash"]=v37.sha256_json(record)
+                records.append(record); previous=record["record_hash"]
+            path.write_text("\n".join(v37.canonical_json(x) for x in records)+"\n",encoding="utf-8")
+            self.assertEqual(v37.read_generation_journal(path),records)
+            records[1]["previous_record_hash"]="f"*64
+            path.write_text("\n".join(v37.canonical_json(x) for x in records)+"\n",encoding="utf-8")
+            with self.assertRaisesRegex(ValueError,"hash-chain"): v37.read_generation_journal(path)
 
     def test_positive_delta_policy_is_preservable(self):
         import json
@@ -89,6 +133,13 @@ class ArtifactTests(unittest.TestCase):
         with np.load(checkpoint,allow_pickle=False) as data:
             self.assertTrue(any("_m" in name for name in data.files))
             self.assertTrue(any("_v" in name for name in data.files))
+
+    def test_complete_checkpoint_restores_candidates_and_optimizer(self):
+        checkpoint=Path("artifacts/v37/robustness-v37-002/evolution_state_v37.npz")
+        metadata,candidates,hof,simulation=v37.load_training_checkpoint(checkpoint)
+        self.assertEqual(len(candidates),len(metadata["checkpoint_candidates"]))
+        self.assertEqual([c.optimizer.step for c in candidates],[int(x["optimizer_step"]) for x in metadata["checkpoint_candidates"]])
+        self.assertEqual(hof.policy.policy_hash,metadata["hof"]["policy_hash"])
 
 
 if __name__=="__main__": unittest.main()

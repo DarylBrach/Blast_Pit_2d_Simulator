@@ -9,6 +9,7 @@ import math
 import os
 import sys
 import tempfile
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -307,6 +308,27 @@ def load_hof(path: Path):
     return metadata,policy,simulation
 
 
+def load_training_checkpoint(path: Path):
+    """Load the complete governed training state, including Adam moments."""
+    metadata, hof_policy, simulation = load_hof(path)
+    candidates=[]
+    with np.load(path,allow_pickle=False) as data:
+        for descriptor in metadata["checkpoint_candidates"]:
+            cid=int(descriptor["candidate_id"])
+            arrays=[np.array(data[f"c{cid}_p{i}"],dtype=np.float64,copy=True) for i in range(11)]
+            moments=[np.array(data[f"c{cid}_m{i}"],dtype=np.float64,copy=True) for i in range(11)]
+            variances=[np.array(data[f"c{cid}_v{i}"],dtype=np.float64,copy=True) for i in range(11)]
+            if any(not np.isfinite(a).all() for a in (*arrays,*moments,*variances)):
+                raise ValueError("v37 candidate or optimizer contains non-finite values")
+            policy=RobustPolicy(v35.Brain(*arrays[:6]),*arrays[6:])
+            if policy.policy_hash!=descriptor["policy_hash"]:
+                raise ValueError("v37 candidate policy hash mismatch")
+            optimizer=RobustAdam(moments,variances,int(descriptor.get("optimizer_step",0)))
+            candidates.append(RobustCandidate(cid,policy,optimizer,descriptor["source_policy_hash"],descriptor["source_kind"]))
+    hof=RobustCandidate(int(metadata["hof"]["candidate_id"]),hof_policy,RobustAdam.zeros(hof_policy),"resume","committed_hof")
+    return metadata,candidates,hof,simulation
+
+
 def write_json(path: Path,value: object):
     path.parent.mkdir(parents=True,exist_ok=True); temp=None
     try:
@@ -317,35 +339,94 @@ def write_json(path: Path,value: object):
         if temp and temp.exists(): temp.unlink()
 
 
+def read_generation_journal(path: Path) -> list[dict[str,object]]:
+    if not path.exists(): return []
+    records=[]; previous="0"*64
+    for number,line in enumerate(path.read_text(encoding="utf-8").splitlines(),1):
+        try: record=json.loads(line)
+        except json.JSONDecodeError as error: raise ValueError(f"invalid v37 generation journal line {number}") from error
+        supplied=record.get("record_hash"); unsigned=dict(record); unsigned.pop("record_hash",None)
+        if supplied!=sha256_json(unsigned) or record.get("previous_record_hash")!=previous:
+            raise ValueError(f"v37 generation journal hash-chain mismatch at line {number}")
+        if int(record.get("generation",-1))!=number-1: raise ValueError("v37 generation journal sequence mismatch")
+        previous=str(supplied); records.append(record)
+    return records
+
+
+def runtime_allows_generation(started: float,max_runtime_seconds: int,runtime_grace_seconds: int,last_generation_seconds: float|None) -> bool:
+    if max_runtime_seconds<=0: return True
+    remaining=max_runtime_seconds-(time.monotonic()-started)
+    reserve=max(float(runtime_grace_seconds),(last_generation_seconds or 0.0)*1.20)
+    return remaining>reserve
+
+
 def experiment_fingerprint(source: Path, simulation, ppo, robustness, audit_seed_file: Path):
     return sha256_json({"app":APP_VERSION,"algorithm":ALGORITHM,"critic_schema":CRITIC_SCHEMA,"simulation":asdict(simulation),"ppo":asdict(ppo),"robustness":asdict(robustness),"v36_checkpoint":file_evidence(source)["sha256"],"audit_seed_commitment":file_evidence(audit_seed_file)["sha256"],"v37_source":hashlib.sha256(Path(__file__).read_bytes()).hexdigest()})
 
 
-def load_approval(path: Path,experiment_id: str,fingerprint: str,action: str):
+def load_approval(path: Path,experiment_id: str,fingerprint: str,action: str,*,source: Path|None=None,audit_seed_file: Path|None=None,
+                  planned_generations: int|None=None,max_runtime_seconds: int|None=None):
     if not path.is_file() or path.is_symlink() or path.stat().st_size>64_000: raise ValueError("v37 approval file invalid")
     record=json.loads(path.read_text(encoding="utf-8"))
+    actions=record.get("authorized_actions")
     if (record.get("schema_version")!="approval.v37.v1" or record.get("project")!="Blast_Pit" or record.get("version")!=APP_VERSION or record.get("status")!="approved" or
-        record.get("authority")!="human-owner" or record.get("experiment_id")!=experiment_id or record.get("lineage_fingerprint")!=fingerprint or action not in record.get("authorized_actions",[])):
+        record.get("authority")!="human-owner" or record.get("experiment_id")!=experiment_id or record.get("lineage_fingerprint")!=fingerprint or
+        not isinstance(actions,list) or not all(isinstance(value,str) for value in actions) or action not in actions):
         raise ValueError("v37 approval scope mismatch")
+    expected={
+        "source_v36_checkpoint_sha256": file_evidence(source)["sha256"] if source else None,
+        "audit_seed_commitment_sha256": file_evidence(audit_seed_file)["sha256"] if audit_seed_file else None,
+        "v37_source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "approved_total_generations": planned_generations,
+        "approved_max_runtime_seconds": max_runtime_seconds,
+    }
+    for key,value in expected.items():
+        if value is not None and key in record and record[key]!=value: raise ValueError(f"v37 approval {key} mismatch")
     return sha256_json(record)
 
 
 def train(args) -> int:
+    if args.max_runtime_seconds<0 or args.runtime_grace_seconds<0: raise ValueError("v37 runtime budget values must be non-negative")
     simulation=v35.SimulationConfig(generations=args.generations,population_size=args.population,elite_count=2,child_count=args.population-3,immigrant_count=1,trials=2,challenge_trials=3,validation_trials=5,max_frames=args.max_frames)
     ppo=v36.PPOConfig(rollout_frames=args.rollout_frames,update_epochs=2,minibatch_size=64); robust=RobustnessConfig(audit_trials=args.audit_trials)
     estimated=args.generations*args.population*(args.rollout_frames+5*args.max_frames)+args.generations*15*args.max_frames
     if estimated>MAX_FRAMES_BUDGET: raise ValueError("v37 training exceeds frame budget")
-    fingerprint=experiment_fingerprint(args.source_v36,simulation,ppo,robust,args.audit_seed_file); approval_digest=load_approval(args.approval_record,args.experiment_id,fingerprint,"train")
+    fingerprint=experiment_fingerprint(args.source_v36,simulation,ppo,robust,args.audit_seed_file)
+    approval_digest=load_approval(args.approval_record,args.experiment_id,fingerprint,"train",source=args.source_v36,audit_seed_file=args.audit_seed_file,
+                                  planned_generations=args.generations,max_runtime_seconds=args.max_runtime_seconds)
     if not args.experiment_id.replace("-","").replace("_","").isalnum(): raise ValueError("invalid v37 experiment ID")
     base=args.artifact_root/args.experiment_id
-    v36.validate_artifact_paths(args.artifact_root,base,base/"evolution_state_v37.npz",base/"generations_v37.jsonl")
-    if base.exists() and any(base.iterdir()): raise ValueError("v37 experiment directory is occupied")
-    base.mkdir(parents=True,exist_ok=True); source_meta,candidates,bank,source_hof=bootstrap_candidates(args.source_v36,simulation,robust,args.population,args.seed)
-    positive=json.loads(args.source_v36.with_name("terminal_audit_v36.json").read_text(encoding="utf-8"))
-    preserved={"schema_version":"v37.specialists.v1","source_checkpoint":file_evidence(args.source_v36),"protected_hof_hash":source_hof.policy.policy_hash,"positive_audit_pairs":[p for p in positive["pairs"] if p["delta"]>0],"challenge_specialists":[{"cell":cell,"source_policy_hash":policy.policy_hash,"challenge_cvar":score,"extinction_tiebreak":ext} for score,ext,cell,policy in bank[:4]]}
-    write_json(base/"robustness_specialists_v37.json",preserved)
-    hof=None; hof_score=-1e9; record_hash="0"*64
-    for generation in range(args.generations):
+    checkpoint=base/"evolution_state_v37.npz"; journal=base/"generations_v37.jsonl"; status_path=base/"status_v37.json"
+    v36.validate_artifact_paths(args.artifact_root,base,checkpoint,journal)
+    started=time.monotonic(); last_generation_seconds=None
+    if args.resume:
+        if Path(args.resume).resolve()!=checkpoint.resolve(): raise ValueError("v37 resume checkpoint must match the experiment artifact path")
+        metadata,candidates,hof,resumed_simulation=load_training_checkpoint(checkpoint)
+        if asdict(resumed_simulation)!=asdict(simulation) or metadata.get("ppo")!=asdict(ppo) or metadata.get("robustness")!=asdict(robust):
+            raise ValueError("v37 resume configuration drift")
+        if metadata.get("fingerprint")!=fingerprint or metadata.get("master_seed")!=args.seed or int(metadata.get("planned_generations",-1))!=args.generations:
+            raise ValueError("v37 resume lineage, seed, or generation plan mismatch")
+        if metadata["record"].get("approval_digest")!=approval_digest: raise ValueError("v37 resume approval record drift")
+        records=read_generation_journal(journal); expected=int(metadata["generation"])+1
+        if len(records)==expected-1 and metadata["record"].get("previous_record_hash")==((records[-1]["record_hash"] if records else "0"*64)):
+            with journal.open("a",encoding="utf-8") as handle:
+                handle.write(canonical_json(metadata["record"])+"\n"); handle.flush(); os.fsync(handle.fileno())
+            records.append(metadata["record"])
+            write_json(base/"recovery_v37.json",{"workflow_state":"RECOVERED","generation":metadata["generation"],"record_hash":metadata["record_hash"],"reason":"checkpoint commit recovered into journal"})
+        if len(records)!=expected or records[-1]["record_hash"]!=metadata["record_hash"]: raise ValueError("v37 checkpoint and generation journal disagree")
+        start_generation=expected; record_hash=metadata["record_hash"]; hof_score=float(metadata["hof"]["challenge_cvar"])
+    else:
+        if base.exists() and any(base.iterdir()): raise ValueError("v37 experiment directory is occupied; use --resume with its checkpoint")
+        base.mkdir(parents=True,exist_ok=True); _,candidates,bank,source_hof=bootstrap_candidates(args.source_v36,simulation,robust,args.population,args.seed)
+        positive=json.loads(args.source_v36.with_name("terminal_audit_v36.json").read_text(encoding="utf-8"))
+        preserved={"schema_version":"v37.specialists.v1","source_checkpoint":file_evidence(args.source_v36),"protected_hof_hash":source_hof.policy.policy_hash,"positive_audit_pairs":[p for p in positive["pairs"] if p["delta"]>0],"challenge_specialists":[{"cell":cell,"source_policy_hash":policy.policy_hash,"challenge_cvar":score,"extinction_tiebreak":ext} for score,ext,cell,policy in bank[:4]]}
+        write_json(base/"robustness_specialists_v37.json",preserved)
+        hof=None; hof_score=-1e9; record_hash="0"*64; start_generation=0
+    write_json(status_path,{"workflow_state":"TRAINING","audit_eligible":False,"generation":start_generation-1,"fingerprint":fingerprint,"planned_generations":args.generations})
+    completed=start_generation
+    for generation in range(start_generation,args.generations):
+        if not runtime_allows_generation(started,args.max_runtime_seconds,args.runtime_grace_seconds,last_generation_seconds): break
+        generation_started=time.monotonic()
         for candidate in candidates:
             episodes=[]; episode_id=0
             for profile,count in (("standard",robust.standard_rollouts),("water_fire_challenge",robust.challenge_rollouts)):
@@ -364,11 +445,15 @@ def train(args) -> int:
             if score>hof_score: hof=RobustCandidate(nominee.candidate_id,nominee.policy.copy(),RobustAdam.zeros(nominee.policy),nominee.source_policy_hash,nominee.source_kind); hof_score=score
         record={"schema_version":SCHEMA_VERSION,"generation":generation,"previous_record_hash":record_hash,"fingerprint":fingerprint,"approval_digest":approval_digest,"robustness":asdict(robust),"candidates":[{"candidate_id":c.candidate_id,"policy_hash":c.policy.policy_hash,"source_policy_hash":c.source_policy_hash,"source_kind":c.source_kind,**c.report} for c in ranked],"hof":{"candidate_id":hof.candidate_id,"policy_hash":hof.policy.policy_hash,"challenge_cvar":hof_score},"source_v36":file_evidence(args.source_v36)}
         record["record_hash"]=sha256_json(record); record_hash=record["record_hash"]
-        metadata={"schema_version":SCHEMA_VERSION,"algorithm":ALGORITHM,"record":record,"record_hash":record_hash,"generation":generation,"hof":record["hof"],"fingerprint":fingerprint,"robustness":asdict(robust),"workflow_state":"TRAINING_COMMITTED","master_seed":args.seed,"simulation":asdict(simulation),"ppo":asdict(ppo),"planned_generations":args.generations,"critic_schema":CRITIC_SCHEMA,"source_v36":file_evidence(args.source_v36),"audit_seed_commitment":file_evidence(args.audit_seed_file)}
-        save_checkpoint(base/"evolution_state_v37.npz",metadata,candidates,hof)
-        with (base/"generations_v37.jsonl").open("a",encoding="utf-8") as handle: handle.write(canonical_json(record)+"\n")
+        metadata={"schema_version":SCHEMA_VERSION,"algorithm":ALGORITHM,"record":record,"record_hash":record_hash,"generation":generation,"hof":record["hof"],"fingerprint":fingerprint,"robustness":asdict(robust),"workflow_state":"GENERATION_COMMITTED","master_seed":args.seed,"simulation":asdict(simulation),"ppo":asdict(ppo),"planned_generations":args.generations,"critic_schema":CRITIC_SCHEMA,"source_v36":file_evidence(args.source_v36),"audit_seed_commitment":file_evidence(args.audit_seed_file)}
+        save_checkpoint(checkpoint,metadata,candidates,hof)
+        with journal.open("a",encoding="utf-8") as handle: handle.write(canonical_json(record)+"\n"); handle.flush(); os.fsync(handle.fileno())
+        completed=generation+1; last_generation_seconds=time.monotonic()-generation_started
+        write_json(status_path,{"workflow_state":"GENERATION_COMMITTED","audit_eligible":False,"generation":generation,"record_hash":record_hash,"hof_policy_hash":hof.policy.policy_hash,"challenge_cvar":hof_score,"fingerprint":fingerprint,"planned_generations":args.generations})
         print(f"commit generation={generation} robust_score={ranked[0].report['robust_score']:.6f} hof_challenge_cvar={hof_score:.6f}",flush=True)
-    write_json(base/"status_v37.json",{"workflow_state":"TRAINING_COMMITTED","generation":args.generations-1,"hof_policy_hash":hof.policy.policy_hash,"challenge_cvar":hof_score,"fingerprint":fingerprint})
+    state="TRAINING_COMPLETE" if completed==args.generations else "BUDGET_EXHAUSTED"
+    write_json(status_path,{"workflow_state":state,"audit_eligible":state=="TRAINING_COMPLETE","generation":completed-1,"record_hash":record_hash,"hof_policy_hash":hof.policy.policy_hash if hof else None,"challenge_cvar":hof_score,"fingerprint":fingerprint,"planned_generations":args.generations,"max_runtime_seconds":args.max_runtime_seconds})
+    print(canonical_json({"workflow_state":state,"completed_generations":completed,"planned_generations":args.generations}),flush=True)
     return 0
 
 
@@ -388,7 +473,11 @@ def audit(args):
     count=args.audit_trials
     if count<32: raise ValueError("v37 audit requires at least 32 trials")
     if count*3*simulation.max_frames>MAX_FRAMES_BUDGET: raise ValueError("v37 audit exceeds frame budget")
-    if metadata.get("workflow_state")!="TRAINING_COMMITTED" or int(metadata["generation"])+1!=int(metadata["planned_generations"]): raise ValueError("v37 training plan is incomplete")
+    if int(metadata["generation"])+1!=int(metadata["planned_generations"]): raise ValueError("v37 training plan is incomplete")
+    status_path=args.checkpoint.with_name("status_v37.json")
+    if status_path.exists():
+        status=json.loads(status_path.read_text(encoding="utf-8"))
+        if "audit_eligible" in status and not status["audit_eligible"]: raise ValueError("v37 workflow state is not audit eligible")
     if metadata["source_v36"]["sha256"]!=file_evidence(args.v36_checkpoint)["sha256"] or metadata["audit_seed_commitment"]["sha256"]!=file_evidence(args.audit_seed_file)["sha256"]: raise ValueError("v37 source or audit commitment mismatch")
     current_fingerprint=experiment_fingerprint(args.v36_checkpoint,simulation,v36.PPOConfig(**metadata["ppo"]),RobustnessConfig(**metadata["robustness"]),args.audit_seed_file)
     if current_fingerprint!=fingerprint: raise ValueError("v37 implementation fingerprint drift")
@@ -414,7 +503,7 @@ def audit(args):
 
 def build_parser():
     parser=argparse.ArgumentParser(description="Blast_Pit v37 robustness experiment"); sub=parser.add_subparsers(dest="command",required=True)
-    train_p=sub.add_parser("train"); train_p.add_argument("--experiment-id",required=True); train_p.add_argument("--source-v36",type=Path,required=True); train_p.add_argument("--audit-seed-file",type=Path,required=True); train_p.add_argument("--artifact-root",type=Path,default=Path("artifacts/v37")); train_p.add_argument("--approval-record",type=Path,default=Path("approval_v37.json")); train_p.add_argument("--generations",type=int,default=1); train_p.add_argument("--population",type=int,default=8); train_p.add_argument("--rollout-frames",type=int,default=256); train_p.add_argument("--max-frames",type=int,default=1000); train_p.add_argument("--audit-trials",type=int,default=64); train_p.add_argument("--seed",type=int,default=20260711)
+    train_p=sub.add_parser("train"); train_p.add_argument("--experiment-id",required=True); train_p.add_argument("--source-v36",type=Path,required=True); train_p.add_argument("--audit-seed-file",type=Path,required=True); train_p.add_argument("--artifact-root",type=Path,default=Path("artifacts/v37")); train_p.add_argument("--approval-record",type=Path,default=Path("approval_v37.json")); train_p.add_argument("--generations",type=int,default=1); train_p.add_argument("--population",type=int,default=8); train_p.add_argument("--rollout-frames",type=int,default=256); train_p.add_argument("--max-frames",type=int,default=1000); train_p.add_argument("--audit-trials",type=int,default=64); train_p.add_argument("--seed",type=int,default=20260711); train_p.add_argument("--resume",type=Path); train_p.add_argument("--max-runtime-seconds",type=int,default=0); train_p.add_argument("--runtime-grace-seconds",type=int,default=300)
     status=sub.add_parser("status"); status.add_argument("--checkpoint",type=Path,required=True)
     audit_p=sub.add_parser("audit"); audit_p.add_argument("--experiment-id",required=True); audit_p.add_argument("--checkpoint",type=Path,required=True); audit_p.add_argument("--v36-checkpoint",type=Path,required=True); audit_p.add_argument("--v35-checkpoint",type=Path,required=True); audit_p.add_argument("--audit-seed-file",type=Path,required=True); audit_p.add_argument("--audit-trials",type=int,default=64); audit_p.add_argument("--approval-record",type=Path,default=Path("approval_v37.json"))
     return parser

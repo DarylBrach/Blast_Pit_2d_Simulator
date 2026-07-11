@@ -37,8 +37,10 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import hashlib
 import json
 import os
+import platform
 import re
 import signal
 import subprocess
@@ -71,6 +73,11 @@ DEFAULT_OLLAMA_ENDPOINTS: tuple[dict[str, Any], ...] = (
 PROJECT_ROOT_MARKERS = (".git", "pyproject.toml", "setup.py", "setup.cfg", "AGENTS.md", "README.md")
 GUARDRAIL_FILES = ("AGENTS.md", "README.md", "HANDOFF.md", "AEKB_HANDOFF.md", "README_START_HERE.md")
 RETRYABLE_STATUSES = {"FAILED", "TIMEOUT", "STALLED"}
+SENSITIVE_NAME = re.compile(r"(?i)(secret|token|password|passwd|credential|api[_-]?key|private[_-]?key)")
+MINIMAL_ENV_KEYS = {
+    "SYSTEMROOT", "WINDIR", "COMSPEC", "TEMP", "TMP", "PATH", "PATHEXT",
+    "USERPROFILE", "HOME", "LOCALAPPDATA", "APPDATA", "LANG", "LC_ALL",
+}
 
 
 class RunnerError(Exception):
@@ -113,6 +120,7 @@ class RunnerConfig:
     allow_parallel: bool
     extra_env: dict[str, str]
     path_prepend: list[Path]
+    minimal_env: bool
     tail_lines: int = DEFAULT_TAIL_LINES
 
     @property
@@ -121,7 +129,7 @@ class RunnerConfig:
 
     @property
     def kill_switch_path(self) -> Path:
-        return self.cwd / self.kill_switch_file
+        return (self.cwd / self.kill_switch_file).resolve()
 
 
 @dataclass
@@ -186,9 +194,46 @@ def slugify(value: str, max_len: int = 80) -> str:
 
 
 def short_hash(value: str) -> str:
-    import hashlib
-
     return hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()[:10]
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def is_within(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def redact(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: ("<redacted>" if SENSITIVE_NAME.search(str(key)) else redact(item)) for key, item in value.items()}
+    if isinstance(value, list):
+        result: list[Any] = []
+        hide_next = False
+        for item in value:
+            text = str(item)
+            if hide_next:
+                result.append("<redacted>")
+                hide_next = False
+            elif SENSITIVE_NAME.search(text.split("=", 1)[0]):
+                if "=" in text:
+                    result.append(text.split("=", 1)[0] + "=<redacted>")
+                else:
+                    result.append(text)
+                    hide_next = True
+            else:
+                result.append(redact(item))
+        return result
+    return value
 
 
 def process_alive(pid: int) -> bool:
@@ -247,11 +292,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--retry-delay", type=int, default=30, help="Seconds between retries. Default: 30.")
     parser.add_argument("--kill-switch", default=DEFAULT_KILL_SWITCH, help="Stop file relative to cwd. Default: .supervisor_stop.")
     parser.add_argument("--no-preflight", action="store_true", help="Skip py_compile preflight.")
-    parser.add_argument("--no-ollama", action="store_true", help="Skip Ollama failure classification.")
+    parser.add_argument("--ollama", action="store_true", help="Explicitly allow LAN Ollama failure classification. Disabled by default.")
+    parser.add_argument("--no-ollama", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--ollama-model", default=DEFAULT_OLLAMA_MODEL, help=f"Ollama model. Default: {DEFAULT_OLLAMA_MODEL}.")
     parser.add_argument("--ollama-timeout", type=int, default=DEFAULT_OLLAMA_TIMEOUT_SECONDS, help="Timeout per Ollama endpoint. Default: 15.")
     parser.add_argument("--no-codex-prompt", action="store_true", help="Do not write a Codex repair prompt on failure.")
     parser.add_argument("--env", action="append", default=[], metavar="KEY=VALUE", help="Extra environment variable for the target. Repeatable.")
+    parser.add_argument("--minimal-env", "--governed", action="store_true", help="Pass only a minimal OS environment plus explicit --env values.")
+    parser.add_argument("--allow-external-target", action="store_true", help="Allow the target outside --cwd (unsafe for governed runs).")
     parser.add_argument("--path-prepend", action="append", default=[], metavar="PATH", help="Path to prepend to PATH. Repeatable.")
     parser.add_argument("--allow-parallel", action="store_true", help="Skip duplicate-run lock for this target/arg set.")
     parser.add_argument("--quiet", action="store_true", help="Do not mirror target output to this console.")
@@ -296,20 +344,28 @@ def make_config(argv: Optional[Sequence[str]] = None) -> RunnerConfig | None:
         raise RunnerError(f"Target must be a .py file: {target}")
 
     python = expand_path(args.python)
-    if not python.exists():
-        raise RunnerError(f"Python interpreter does not exist: {python}")
+    if not python.exists() or not python.is_file():
+        raise RunnerError(f"Python interpreter must be a file: {python}")
 
     cwd = expand_path(args.cwd) if args.cwd else find_project_root(target)
     if not cwd.exists() or not cwd.is_dir():
         raise RunnerError(f"Working directory does not exist: {cwd}")
+    if not args.allow_external_target and not is_within(target, cwd):
+        raise RunnerError(f"Target must be within working directory: {cwd}")
+    kill_switch = Path(args.kill_switch)
+    if kill_switch.is_absolute() or len(kill_switch.parts) != 1 or kill_switch.name in {"", ".", ".."}:
+        raise RunnerError("Kill switch must be one simple filename relative to cwd.")
 
+    artifacts_root = expand_path(args.artifacts)
+    if artifacts_root.exists() and not artifacts_root.is_dir():
+        raise RunnerError(f"Artifact root must be a directory: {artifacts_root}")
     name = slugify(args.name or target.stem)
     return RunnerConfig(
         target=target,
         target_args=forwarded_target_args,
         python=python,
         cwd=cwd,
-        artifacts_root=expand_path(args.artifacts),
+        artifacts_root=artifacts_root,
         name=name,
         timeout_seconds=max(1, int(args.timeout)),
         stall_seconds=max(0, int(args.stall)),
@@ -317,7 +373,7 @@ def make_config(argv: Optional[Sequence[str]] = None) -> RunnerConfig | None:
         retry_delay_seconds=max(0, int(args.retry_delay)),
         kill_switch_file=args.kill_switch,
         preflight=not args.no_preflight,
-        ollama_enabled=not args.no_ollama,
+        ollama_enabled=bool(args.ollama and not args.no_ollama),
         ollama_model=args.ollama_model,
         ollama_timeout_seconds=max(1, int(args.ollama_timeout)),
         codex_prompt=not args.no_codex_prompt,
@@ -327,11 +383,13 @@ def make_config(argv: Optional[Sequence[str]] = None) -> RunnerConfig | None:
         allow_parallel=args.allow_parallel,
         extra_env=parse_key_value(args.env),
         path_prepend=[expand_path(path) for path in args.path_prepend],
+        minimal_env=bool(args.minimal_env),
     )
 
 
 def build_env(config: RunnerConfig) -> dict[str, str]:
-    env = os.environ.copy()
+    env = ({key: value for key, value in os.environ.items() if key.upper() in MINIMAL_ENV_KEYS}
+           if config.minimal_env else os.environ.copy())
     env["PYTHONUNBUFFERED"] = "1"
 
     pythonpath_parts = [str(config.cwd)]
@@ -478,6 +536,53 @@ def stream_reader(
                 print(text, end="", file=output, flush=True)
 
 
+def git_metadata(cwd: Path) -> dict[str, Any]:
+    def call(*args: str) -> Optional[str]:
+        try:
+            result = subprocess.run(["git", "-C", str(cwd), *args], text=True,
+                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                    timeout=10, check=False)
+            return result.stdout.strip() if result.returncode == 0 else None
+        except (OSError, subprocess.SubprocessError):
+            return None
+    commit = call("rev-parse", "HEAD")
+    status = call("status", "--porcelain=v1") if commit else None
+    return {"is_repository": commit is not None, "commit": commit,
+            "dirty": bool(status) if status is not None else None,
+            "status_sha256": hashlib.sha256((status or "").encode()).hexdigest() if status is not None else None}
+
+
+def execution_metadata(config: RunnerConfig) -> dict[str, Any]:
+    inputs: list[dict[str, Any]] = []
+    seen: set[Path] = set()
+    for raw in config.target_args:
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = config.cwd / candidate
+        try:
+            candidate = candidate.resolve()
+            if candidate.is_file() and candidate not in seen:
+                seen.add(candidate)
+                inputs.append({"path": str(candidate), "bytes": candidate.stat().st_size,
+                               "sha256": sha256_file(candidate)})
+        except OSError:
+            continue
+    runner = Path(__file__).resolve()
+    return {
+        "captured_at": iso_now(), "platform": platform.platform(), "hostname": platform.node(),
+        "python_version": platform.python_version(), "python_implementation": platform.python_implementation(),
+        "git": git_metadata(config.cwd),
+        "files": {
+            "runner": {"path": str(runner), "sha256": sha256_file(runner)},
+            "target": {"path": str(config.target), "sha256": sha256_file(config.target)},
+            "python": {"path": str(config.python), "sha256": sha256_file(config.python)},
+            "input_files": inputs,
+        },
+        "environment_policy": "minimal" if config.minimal_env else "inherited",
+        "explicit_environment_keys": sorted(config.extra_env),
+    }
+
+
 def command_result_from_completed(label: str, command: list[str], completed: subprocess.CompletedProcess[str], start: float, stdout_log: Path, stderr_log: Path, combined_log: Path) -> CommandResult:
     status = "SUCCESS" if completed.returncode == 0 else "FAILED"
     reason = "completed successfully" if status == "SUCCESS" else f"exited with code {completed.returncode}"
@@ -569,34 +674,44 @@ def run_target_once(config: RunnerConfig, run_dir: Path, attempt_number: int) ->
     status = "SUCCESS"
     reason = "completed successfully"
 
-    while True:
-        rc = proc.poll()
-        elapsed = time.monotonic() - start
-        if rc is not None:
-            if rc != 0:
-                status = "FAILED"
-                reason = f"exited with code {rc}"
-            break
+    last_heartbeat = 0.0
+    try:
+        while True:
+            rc = proc.poll()
+            elapsed = time.monotonic() - start
+            if rc is not None:
+                if rc != 0:
+                    status = "FAILED"
+                    reason = f"exited with code {rc}"
+                break
 
-        if config.kill_switch_path.exists():
-            status = "KILLED"
-            reason = f"kill switch detected: {config.kill_switch_path}"
-            terminate_process_tree(proc)
-            break
+            if config.kill_switch_path.exists():
+                status = "KILLED"
+                reason = f"kill switch detected: {config.kill_switch_path}"
+                terminate_process_tree(proc)
+                break
 
-        if elapsed > config.timeout_seconds:
-            status = "TIMEOUT"
-            reason = f"hard timeout exceeded: {config.timeout_seconds}s"
-            terminate_process_tree(proc)
-            break
+            if elapsed > config.timeout_seconds:
+                status = "TIMEOUT"
+                reason = f"hard timeout exceeded: {config.timeout_seconds}s"
+                terminate_process_tree(proc)
+                break
 
-        if config.stall_seconds > 0 and activity.idle_seconds() > config.stall_seconds:
-            status = "STALLED"
-            reason = f"no stdout/stderr activity for {config.stall_seconds}s"
-            terminate_process_tree(proc)
-            break
+            if config.stall_seconds > 0 and activity.idle_seconds() > config.stall_seconds:
+                status = "STALLED"
+                reason = f"no stdout/stderr activity for {config.stall_seconds}s"
+                terminate_process_tree(proc)
+                break
 
-        time.sleep(0.5)
+            if elapsed - last_heartbeat >= 30:
+                write_json(attempt_dir / "heartbeat.json", {"status": "RUNNING", "pid": proc.pid,
+                           "updated_at": iso_now(), "elapsed_seconds": round(elapsed, 2),
+                           "idle_seconds": round(activity.idle_seconds(), 2)})
+                last_heartbeat = elapsed
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        terminate_process_tree(proc)
+        raise
 
     try:
         proc.wait(timeout=DEFAULT_GRACE_SECONDS)
@@ -687,7 +802,7 @@ def build_failure_evidence(config: RunnerConfig, result: CommandResult, classifi
 - target: {config.target}
 - cwd: {config.cwd}
 - python: {config.python}
-- args: {json.dumps(config.target_args)}
+- args: {json.dumps(redact(config.target_args))}
 
 ## Result
 - status: {result.status}
@@ -795,7 +910,7 @@ Review the failed supervised run below and propose the smallest safe fix. Do not
 
 ## Target Command
 ```text
-{' '.join(config.target_command)}
+{' '.join(redact(config.target_command))}
 ```
 
 ## Guardrails
@@ -825,13 +940,34 @@ Review the failed supervised run below and propose the smallest safe fix. Do not
 
 
 def write_json(path: Path, data: Any) -> None:
-    path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        with temp.open("w", encoding="utf-8", newline="\n") as handle:
+            json.dump(data, handle, indent=2, default=str)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
 
 
 def copy_latest(config: RunnerConfig, state_path: Path) -> None:
     latest_path = config.artifacts_root / "latest" / f"{config.name}_state.json"
-    latest_path.parent.mkdir(parents=True, exist_ok=True)
-    latest_path.write_text(state_path.read_text(encoding="utf-8"), encoding="utf-8")
+    write_json(latest_path, json.loads(state_path.read_text(encoding="utf-8")))
+
+
+def write_manifest(run_dir: Path) -> Path:
+    entries = []
+    for path in sorted(run_dir.rglob("*"), key=lambda item: item.as_posix()):
+        if path.is_file() and path.name != "sha256_manifest.json" and not path.name.endswith(".tmp"):
+            entries.append({"path": path.relative_to(run_dir).as_posix(), "bytes": path.stat().st_size,
+                            "sha256": sha256_file(path)})
+    manifest = run_dir / "sha256_manifest.json"
+    write_json(manifest, {"schema_version": "codex-light-runner.manifest.v1",
+                          "created_at": iso_now(), "files": entries})
+    return manifest
 
 
 def print_human_summary(state: dict[str, Any]) -> None:
@@ -863,18 +999,25 @@ def run(config: RunnerConfig) -> int:
     codex_prompt_path: Optional[Path] = None
 
     try:
+        if config.kill_switch_path.exists():
+            raise RunnerError(f"Stale kill switch exists before launch: {config.kill_switch_path}")
+        metadata = execution_metadata(config)
         write_json(
             run_dir / "effective_command.json",
             {
                 "version": VERSION,
                 "target": str(config.target),
-                "target_args": config.target_args,
+                "target_args": redact(config.target_args),
                 "python": str(config.python),
                 "cwd": str(config.cwd),
-                "command": config.target_command,
-                "ollama_endpoints": list(DEFAULT_OLLAMA_ENDPOINTS),
+                "command": redact(config.target_command),
+                "ollama_enabled": config.ollama_enabled,
+                "ollama_endpoints": list(DEFAULT_OLLAMA_ENDPOINTS) if config.ollama_enabled else [],
+                "execution_metadata": metadata,
             },
         )
+        write_json(run_dir / "running_state.json", {"status": "RUNNING", "run_id": rid,
+                   "pid": os.getpid(), "started_at": started_at})
 
         if config.preflight:
             preflight_result = run_preflight(config, run_dir)
@@ -911,10 +1054,10 @@ def run(config: RunnerConfig) -> int:
             "version": VERSION,
             "run_id": rid,
             "target": str(config.target),
-            "target_args": config.target_args,
+            "target_args": redact(config.target_args),
             "python": str(config.python),
             "cwd": str(config.cwd),
-            "command": config.target_command,
+            "command": redact(config.target_command),
             "status": final_result.status,
             "reason": final_result.reason,
             "return_code": final_result.return_code,
@@ -930,7 +1073,9 @@ def run(config: RunnerConfig) -> int:
         }
         state_path = run_dir / "state.json"
         write_json(state_path, state)
+        (run_dir / "running_state.json").unlink(missing_ok=True)
         copy_latest(config, state_path)
+        write_manifest(run_dir)
 
         if config.json_stdout:
             print(json.dumps(state, indent=2, default=str))
@@ -938,6 +1083,18 @@ def run(config: RunnerConfig) -> int:
             print_human_summary(state)
 
         return 0 if final_result.status == "SUCCESS" else 2
+    except KeyboardInterrupt:
+        interrupted = {
+            "version": VERSION, "run_id": rid, "status": "INTERRUPTED",
+            "reason": "operator keyboard interrupt", "target": str(config.target),
+            "command": redact(config.target_command), "started_at": started_at,
+            "ended_at": iso_now(), "artifacts_dir": str(run_dir),
+        }
+        write_json(run_dir / "state.json", interrupted)
+        (run_dir / "running_state.json").unlink(missing_ok=True)
+        copy_latest(config, run_dir / "state.json")
+        write_manifest(run_dir)
+        raise
     finally:
         release_lock(lock_path)
 

@@ -21,3 +21,5 @@
 - Versioned artifacts, approvals, checkpoints, and documentation as v35.
 
 See `CHANGELOG_v36.md` for the experimental QD-PPO lifecycle implementation. v35 remains the production baseline after v36 failed the current comparison release gate.
+
+See `CHANGELOG_v37.md` for the robustness lineage and governed eight-hour operator workflow. Neither v36 nor v37 has cleared its empirical release gate.
