@@ -1116,7 +1116,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "kill_switch": str(config.kill_switch_path),
                 "ollama_enabled": config.ollama_enabled,
                 "ollama_model": config.ollama_model,
-                "ollama_endpoints": list(DEFAULT_OLLAMA_ENDPOINTS),
+                "ollama_endpoints": list(DEFAULT_OLLAMA_ENDPOINTS) if config.ollama_enabled else [],
+                "environment_policy": "minimal" if config.minimal_env else "inherited",
             }, indent=2))
             return 0
         return run(config)
