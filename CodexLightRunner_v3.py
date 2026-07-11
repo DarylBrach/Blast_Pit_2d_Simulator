@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+r"""
 CodexLightRunner_v3.py
 
 A profileless, one-shot Python supervisor.
