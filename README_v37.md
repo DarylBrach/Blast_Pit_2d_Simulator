@@ -16,6 +16,6 @@ See [docs/V37_ARCHITECTURE.md](docs/V37_ARCHITECTURE.md), [docs/V37_ROBUSTNESS_O
 
 ## Governed eight-hour iteration
 
-The operator entrypoint is `run_v37_8h.ps1`; the complete procedure is [docs/V37_OPERATIONS.md](docs/V37_OPERATIONS.md). It uses experiment `robustness-v37-8h-001`, a 28,200-second simulator budget, a 300-second generation-boundary grace window, and a 28,800-second supervisor timeout. It supports dry-run and validated checkpoint resume while preserving the approved total generation ceiling.
+The operator entrypoint is `run_v37_8h.bat`, which invokes `run_v37_8h.ps1` with a process-scoped execution-policy bypass for locked-down Windows hosts; the complete procedure is [docs/V37_OPERATIONS.md](docs/V37_OPERATIONS.md). It uses experiment `robustness-v37-8h-001`, a 28,200-second simulator budget, a 300-second generation-boundary grace window, and a 28,800-second supervisor timeout. It supports dry-run and validated checkpoint resume while preserving the approved total generation ceiling.
 
 The scoped `approval_v37_8h_001.json` and fresh 64-seed `audit_seeds_v37_8h_001_committed.txt` record the human-owner authorization from the 2026-07-11 Codex session. The launcher and simulator fail closed if either input or the frozen configuration drifts. Authorization permits bounded training; it does not guarantee improvement, authorize release, or waive terminal comparison gates.

@@ -14,7 +14,7 @@ Use the repository interpreter explicitly:
 Set-Location 'E:\Code\Python\VirtualEnvironments\Blast_Pit\2d_Simulator'
 git status --short
 & 'E:\Code\Python\VirtualEnvironments\Blast_Pit\Scripts\python.exe' -m pytest -q
-.\run_v37_8h.ps1 -DryRun
+.\run_v37_8h.bat -DryRun
 ```
 
 The launcher rejects a dirty worktree, absent Git metadata, missing Python, stale scoped stop file, wrong approval identity, missing `train` authority, or missing seed commitment. A successful dry run records the Git commit and remote, Python version, `pip freeze`, input SHA-256 hashes, selected fresh/resume mode, and the effective runner command under `run_evidence\robustness-v37-8h-001`.
@@ -24,7 +24,7 @@ Review that evidence and the resolved command before execution. The approved `Ge
 ## Execute and monitor
 
 ```powershell
-.\run_v37_8h.ps1
+.\run_v37_8h.bat
 ```
 
 In another PowerShell window:
@@ -51,8 +51,8 @@ After the runner records termination, review the latest state and checkpoint sta
 
 ```powershell
 Remove-Item -LiteralPath '.\.supervisor_stop.robustness-v37-8h-001'
-.\run_v37_8h.ps1 -DryRun
-.\run_v37_8h.ps1
+.\run_v37_8h.bat -DryRun
+.\run_v37_8h.bat
 ```
 
 When the checkpoint exists, the launcher supplies `train --resume`. Resume validates the same source, implementation, seed commitment, approval, configuration, and planned total generation ceiling. Never delete an occupied experiment directory or alter retained JSONL/checkpoint evidence to force restart.

@@ -1,6 +1,6 @@
 # Changelog v37
 
-- Added the approved `robustness-v37-8h-001` bounded workflow: restartable candidate/optimizer checkpoints, generation-journal recovery, explicit audit eligibility, governed supervisor evidence, a clean-Git PowerShell launcher, fresh seed commitment, and exact human-owner approval.
+- Added the approved `robustness-v37-8h-001` bounded workflow: restartable candidate/optimizer checkpoints, generation-journal recovery, explicit audit eligibility, governed supervisor evidence, clean-Git Windows launchers, fresh seed commitment, and exact human-owner approval.
 
 - Added profile-aware PPO with one standard and three challenge rollouts per candidate.
 - Doubled challenge water/recovery/fire reward contributions.
