@@ -467,7 +467,9 @@ def report_status(checkpoint: Path) -> dict[str,object]:
     metadata,policy,_=load_hof(checkpoint)
     generation=int(metadata["generation"]); planned=int(metadata.get("planned_generations",generation+1))
     status_path=checkpoint.with_name("status_v37.json")
+    if metadata.get("workflow_state")=="GENERATION_COMMITTED" and not status_path.is_file(): raise ValueError("v37 committed checkpoint requires status evidence")
     status=json.loads(status_path.read_text(encoding="utf-8")) if status_path.is_file() else {}
+    if metadata.get("workflow_state")=="GENERATION_COMMITTED" and not {"generation","fingerprint","record_hash"}.issubset(status): raise ValueError("v37 status binding fields missing")
     for key,expected in (("generation",generation),("fingerprint",metadata["fingerprint"]),("record_hash",metadata["record_hash"])):
         if key in status and status[key]!=expected: raise ValueError(f"v37 status {key} mismatch")
     completed=generation+1; remaining=max(0,planned-completed)
@@ -487,15 +489,13 @@ def bootstrap_ci(deltas,seed):
 
 def audit(args):
     metadata,v37_policy,simulation=load_hof(args.checkpoint); fingerprint=metadata["fingerprint"]; approval_digest=load_approval(args.approval_record,args.experiment_id,fingerprint,"audit")
+    lifecycle=report_status(args.checkpoint)
+    if lifecycle["workflow_state"]!="TRAINING_COMPLETE" or not lifecycle["audit_eligible"] or lifecycle["remaining_generations"]!=0: raise ValueError("v37 workflow is not terminal-audit eligible")
     v36_meta,_,_,v36_hof=v36.load_checkpoint(args.v36_checkpoint); v35_meta=v35._raw_checkpoint_metadata(args.v35_checkpoint); v35_config=v35.SimulationConfig(**v35_meta["config"]); v35_brain=v35.CheckpointRepository.load(args.v35_checkpoint,v35_config)[0]
     count=args.audit_trials
     if count<32: raise ValueError("v37 audit requires at least 32 trials")
     if count*3*simulation.max_frames>MAX_FRAMES_BUDGET: raise ValueError("v37 audit exceeds frame budget")
     if int(metadata["generation"])+1!=int(metadata["planned_generations"]): raise ValueError("v37 training plan is incomplete")
-    status_path=args.checkpoint.with_name("status_v37.json")
-    if status_path.exists():
-        status=json.loads(status_path.read_text(encoding="utf-8"))
-        if "audit_eligible" in status and not status["audit_eligible"]: raise ValueError("v37 workflow state is not audit eligible")
     if metadata["source_v36"]["sha256"]!=file_evidence(args.v36_checkpoint)["sha256"] or metadata["audit_seed_commitment"]["sha256"]!=file_evidence(args.audit_seed_file)["sha256"]: raise ValueError("v37 source or audit commitment mismatch")
     current_fingerprint=experiment_fingerprint(args.v36_checkpoint,simulation,v36.PPOConfig(**metadata["ppo"]),RobustnessConfig(**metadata["robustness"]),args.audit_seed_file)
     if current_fingerprint!=fingerprint: raise ValueError("v37 implementation fingerprint drift")

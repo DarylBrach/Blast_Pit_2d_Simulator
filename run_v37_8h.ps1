@@ -49,6 +49,9 @@ $Approval = Get-Content -LiteralPath $ApprovalPath -Raw | ConvertFrom-Json
 if ($Approval.experiment_id -ne $ExperimentId -or $Approval.status -ne 'approved' -or $Approval.authority -ne 'human-owner') {
     throw "Approval is not scoped to approved human-owner experiment $ExperimentId."
 }
+if ([int]$Approval.supervisor_hard_timeout_seconds -ne $HardTimeoutSeconds) {
+    throw "Approval supervisor timeout does not match the governed $HardTimeoutSeconds-second ceiling."
+}
 
 $StopPath = Join-Path $ProjectRoot $KillSwitch
 if (Test-Path -LiteralPath $StopPath) {

@@ -101,7 +101,7 @@ class ArtifactTests(unittest.TestCase):
 
     def test_status_reports_terminal_state_and_rejects_tamper(self):
         import json, shutil
-        source=Path("artifacts/v37/robustness-v37-002/evolution_state_v37.npz"); metadata,_,_=v37.load_hof(source)
+        source=Path("artifacts/v37/robustness-v37-002/evolution_state_v37.npz"); metadata,policy,simulation=v37.load_hof(source)
         with tempfile.TemporaryDirectory() as folder:
             checkpoint=Path(folder)/"evolution_state_v37.npz"; shutil.copy2(source,checkpoint)
             status={"workflow_state":"TRAINING_COMPLETE","audit_eligible":True,"generation":metadata["generation"],
@@ -111,6 +111,9 @@ class ArtifactTests(unittest.TestCase):
             self.assertTrue(result["audit_eligible"]); self.assertEqual(result["remaining_generations"],0); self.assertEqual(result["next_action"],"audit")
             status["record_hash"]="0"*64; checkpoint.with_name("status_v37.json").write_text(json.dumps(status))
             with self.assertRaisesRegex(ValueError,"record_hash mismatch"): v37.report_status(checkpoint)
+            checkpoint.with_name("status_v37.json").unlink(); current=dict(metadata); current["workflow_state"]="GENERATION_COMMITTED"
+            with patch.object(v37,"load_hof",return_value=(current,policy,simulation)),self.assertRaisesRegex(ValueError,"requires status evidence"):
+                v37.report_status(checkpoint)
 
     def test_budget_stop_resume_matches_uninterrupted_training(self):
         from argparse import Namespace
