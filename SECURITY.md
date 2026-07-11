@@ -12,4 +12,6 @@ v36-specific checkpoint, approval, audit, archive-export, and release boundaries
 
 v37-specific robustness, committed-audit-seed, specialist-bank, and three-way comparison boundaries are documented in [docs/V37_SECURITY.md](docs/V37_SECURITY.md).
 
+The Codex improvement controller adds a local agentic surface. Codex is constrained to a candidate worktree with workspace-write sandboxing, noninteractive approval rejection, a two-file change allowlist, forbidden-code scanning, full tests, trusted scoring, and branch-only retention. These controls are defense in depth, not an OS sandbox. The controller never receives production release authority and never records Codex credentials.
+
 The eight-hour launcher requires a clean Git worktree, captures dependency and input hashes, disables Ollama, uses zero automatic retries, and scopes its kill switch to one experiment. These controls improve provenance but do not create an OS sandbox. Do not place credentials in runner environment overrides or evidence; use a dedicated low-privilege account or VM for stronger isolation.

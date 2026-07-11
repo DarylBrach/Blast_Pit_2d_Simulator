@@ -46,4 +46,6 @@ The governed QD-PPO v36 lifecycle and retained experiment are documented separat
 
 The robustness-focused v37 experiment is documented in [README_v37.md](README_v37.md). It is a new v36-bootstrap lineage and also failed its empirical release gate.
 
+The governed Codex improvement controller is documented in [docs/CODEX_IMPROVEMENT_LOOP.md](docs/CODEX_IMPROVEMENT_LOOP.md). It proposes and evaluates changes only in isolated candidate worktrees; it does not modify or release `main` automatically.
+
 The governed v37 eight-hour operator workflow is [docs/V37_OPERATIONS.md](docs/V37_OPERATIONS.md). Use `run_v37_8h.ps1 -DryRun` first. The launcher is deliberately approval-gated and will not reuse an older experiment's authorization.

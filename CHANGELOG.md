@@ -1,5 +1,7 @@
 # Changelog
 
+- Added a CodexLightRunner-supervised, worktree-isolated Codex improvement controller with structured proposals, security and test gates, trusted deterministic scoring, and candidate-branch-only retention.
+
 ## v35
 
 - Added concise checkpoint `status` output and actionable fresh-train collision recovery guidance.

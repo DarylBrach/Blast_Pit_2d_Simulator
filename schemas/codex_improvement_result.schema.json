@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "category": {"type": "string", "enum": ["process", "algorithm", "correctness", "no_change"]},
+    "hypothesis": {"type": "string"},
+    "summary": {"type": "string"},
+    "changed_files": {"type": "array", "items": {"type": "string"}},
+    "tests_run": {"type": "array", "items": {"type": "string"}},
+    "risks": {"type": "array", "items": {"type": "string"}}
+  },
+  "required": ["category", "hypothesis", "summary", "changed_files", "tests_run", "risks"],
+  "additionalProperties": false
+}
