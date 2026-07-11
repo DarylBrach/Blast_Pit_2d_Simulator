@@ -1,0 +1,10 @@
+{
+  "schema_version": "v37.approval-timing-clarification.v1",
+  "approval_file": "approval_v37_002.json",
+  "declared_issued_utc": "2026-07-11T15:00:00Z",
+  "observed_file_time_utc": "2026-07-11T14:54:16Z",
+  "training_checkpoint_time_utc": "2026-07-11T14:54:39Z",
+  "terminal_audit_time_utc": "2026-07-11T14:55:05Z",
+  "clarification": "The declared issued_utc was future-dated by drafting error. Direct human authorization was already present in the active Codex request, and the approval file existed before training. The declared timestamp is not used as proof of prior authorization.",
+  "evidence_treatment": "Append-only clarification; the retained approval record was not rewritten."
+}

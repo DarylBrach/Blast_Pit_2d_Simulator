@@ -1,0 +1,1 @@
+{"archive_coverage":0.04,"checkpoint":"artifacts\\v36\\qdppo-smoke-001\\evolution_state_v36.npz","fingerprint":"8cff291d2441bacef683f92d46d4fa42328256551b86bb1781a7f89396e309f2","last_generation":0,"qd_score":0.46027479973919516,"results":"artifacts\\v36\\qdppo-smoke-001\\generations_v36.jsonl","workflow_state":"TRAINING_COMMITTED"}

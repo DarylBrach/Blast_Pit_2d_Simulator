@@ -1,0 +1,17 @@
+{
+  "schema_version": "approval.v37.v1",
+  "project": "Blast_Pit",
+  "version": "v37",
+  "status": "approved",
+  "authority": "human-owner",
+  "authorization_source": "direct user authorization in Codex session on 2026-07-11",
+  "issued_utc": "2026-07-11T15:00:00Z",
+  "no_expiry_declared": true,
+  "experiment_id": "robustness-v37-002",
+  "lineage_fingerprint": "0e3bfa000c3e41fc488868fb3b1fca53205c4f00e916eed9dd0ba94bb16b6088",
+  "source_v36_checkpoint_sha256": "a02e6a9d575100c963d464ed04e8bf7177bf57a1dedc764da2baddf1c3fd7c95",
+  "audit_seed_commitment_sha256": "d62d5be8b34df10442027c61cd9b87775e378e3a7d820260ab70fd39df9e3728",
+  "authorized_actions": ["train", "audit", "export"],
+  "release_authorized_conditionally": false,
+  "notes": "Corrected v37 lineage after trajectory/checkpoint review. Empirical gates cannot be waived."
+}

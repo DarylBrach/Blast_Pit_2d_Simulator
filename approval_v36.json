@@ -1,0 +1,14 @@
+{
+  "schema_version": "approval.v36.v1",
+  "project": "Blast_Pit",
+  "version": "v36",
+  "status": "approved",
+  "authority": "human-owner",
+  "authorization_source": "direct user authorization in Codex session on 2026-07-11",
+  "issued_utc": "2026-07-11T13:00:00Z",
+  "experiment_id": "qdppo-evaluation-001",
+  "lineage_fingerprint": "835a1d920420f02d51a0a8f514dbdfb9f082dbb4fa54cb9de0ae6dce39c7ac90",
+  "authorized_actions": ["continue", "audit", "export", "release"],
+  "fresh_training_authorized": false,
+  "notes": "Scoped local human approval. Not a cryptographic signature. Release remains conditional on independent terminal audit and manifest gates."
+}

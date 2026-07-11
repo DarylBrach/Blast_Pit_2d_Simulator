@@ -1,0 +1,15 @@
+{
+  "schema_version": "v37.failure-summary.v1",
+  "audit_record_hash": "e2199f9b4f234137e32a2994d42de74e63af2267ce3868d6e27f2320fe7bddbc",
+  "finding": "The corrected v37 policy gained small recovery and water advantages over v36 but lost fire avoidance, survival, and offspring survival; these losses dominated the robustness objective.",
+  "v37_early_extinctions": 6,
+  "audit_trials": 64,
+  "mean_component_delta_vs_v36": {
+    "standard": {"survival": -0.055915, "water": -0.019200, "damage_avoidance": -0.072412, "recovery": 0.027871, "offspring_survival": -0.103913, "exploration": -0.010753},
+    "water_fire_challenge": {"survival": -0.023800, "water": 0.002297, "damage_avoidance": -0.064431, "recovery": 0.021738, "offspring_survival": -0.048428, "exploration": -0.008875}
+  },
+  "mean_component_delta_vs_v35": {
+    "standard": {"survival": -0.070161, "water": -0.291073, "damage_avoidance": -0.029302, "recovery": -0.240744, "offspring_survival": -0.313791, "exploration": -0.117310},
+    "water_fire_challenge": {"survival": -0.021781, "water": -0.247556, "damage_avoidance": -0.029869, "recovery": -0.304952, "offspring_survival": -0.041875, "exploration": -0.121245}
+  }
+}

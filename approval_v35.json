@@ -1,0 +1,1 @@
+{"schema_version":"approval.v1","project":"Blast_Pit","version":"v35","status":"approved","authorized_actions":["local_training","finalize_audit"],"authority":"local-owner","issued":"2026-07-11","notes":"Local authorization record; not a cryptographic signature."}

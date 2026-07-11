@@ -1,0 +1,16 @@
+{
+  "schema_version": "approval.v37.v1",
+  "project": "Blast_Pit",
+  "version": "v37",
+  "status": "approved",
+  "authority": "human-owner",
+  "authorization_source": "direct user authorization in Codex session on 2026-07-11",
+  "issued_utc": "2026-07-11T14:00:00Z",
+  "no_expiry_declared": true,
+  "experiment_id": "robustness-v37-001",
+  "lineage_fingerprint": "28cc7ebbcb7b24d05d1b94fabac30818c11de7a2afada0c8cacf3e2abd5673c0",
+  "source_v36_checkpoint_sha256": "a02e6a9d575100c963d464ed04e8bf7177bf57a1dedc764da2baddf1c3fd7c95",
+  "authorized_actions": ["train", "audit", "export"],
+  "release_authorized_conditionally": false,
+  "notes": "Scoped unsigned local approval. Empirical release gates cannot be waived."
+}

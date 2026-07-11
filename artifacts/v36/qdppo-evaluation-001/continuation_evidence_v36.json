@@ -1,0 +1,20 @@
+{
+  "schema_version": "v36.continuation-evidence.v1",
+  "experiment_id": "qdppo-evaluation-001",
+  "continued_from_generation": 19,
+  "committed_generation": 20,
+  "completed_generations": 21,
+  "next_candidate_id": 337,
+  "archive_occupied_before": 11,
+  "archive_occupied_after": 11,
+  "validation_hof_candidate_id": 201,
+  "validation_hof_source_generation": 12,
+  "validation_hof_policy_hash": "ee521f0fb698762c6d2794d6ce0aff6114af2c3ee0bf5c31e213f54fff3de02f",
+  "generation_record_hash": "645910858e1df8a5b2b355ace9912a57827777b7f8e53b529530c9375561070f",
+  "checkpoint_sha256": "a02e6a9d575100c963d464ed04e8bf7177bf57a1dedc764da2baddf1c3fd7c95",
+  "generations_jsonl_sha256": "58d6384a7da16e2523fb15b15a2259c5ac76915b18bf8fbda64eebddedd1dddf",
+  "workflow_state": "TRAINING_COMMITTED",
+  "audit_state": "AUDIT_COMMITTED",
+  "release_gate": "FAIL",
+  "release_manifest_present": false
+}

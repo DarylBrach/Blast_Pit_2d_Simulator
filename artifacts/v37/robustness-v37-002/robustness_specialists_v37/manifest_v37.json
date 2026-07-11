@@ -1,0 +1,11 @@
+{
+  "schema_version": "v37.specialist-bank.v1",
+  "source_v36_checkpoint_sha256": "a02e6a9d575100c963d464ed04e8bf7177bf57a1dedc764da2baddf1c3fd7c95",
+  "policies": [
+    {"file": "protected_v36_hof.npz", "role": "protected_positive-delta baseline", "policy_hash": "ee521f0fb698762c6d2794d6ce0aff6114af2c3ee0bf5c31e213f54fff3de02f", "sha256": "5e5281b3a06a0880ad6fedff789fcbb658f514c349198049a16d07483056b302"},
+    {"file": "challenge_elite_2_0.npz", "role": "challenge specialist", "cell": [2,0], "policy_hash": "a37efbbba16a26b2493d83b1bc4fa1119d20116c646f131336d22e52b999842d", "sha256": "b370382b25f5bf3d86ef12f6cfe24d515937d4cb2c4e1fd08f217c0dd52af17f"},
+    {"file": "challenge_elite_3_2.npz", "role": "challenge specialist", "cell": [3,2], "policy_hash": "8eb079dbc66c157a4d28044386125855d7d023f37a80375097bfe91e7b343452", "sha256": "af8ef044d9ff648bd6485b881fc291ec42b5271d32916721e6e5a3f08690df6e"},
+    {"file": "challenge_elite_4_3.npz", "role": "challenge specialist", "cell": [4,3], "policy_hash": "2d3ed2a9e9be3283ab925889b6248bce18e4028abe9bec740fc6a9dab19b741b", "sha256": "d53cc9ea623d251b235a9da1247d30fe3944b4d8c5a0a3ce28353c8169ede4d2"},
+    {"file": "challenge_elite_3_3.npz", "role": "challenge specialist", "cell": [3,3], "policy_hash": "c46f7c7ee65b5d4ab4a3488778526726076b6d22c562d8eefcd6e02f001cd69f", "sha256": "de9393e366227c4a5af4fc2b080d1644c828377a3a45e7cf3de32d6171be882c"}
+  ]
+}

@@ -1,0 +1,1 @@
+{"audit_consumption":"explicit_one_shot","audit_namespace":"terminal_audit:{t}:environment","challenge_namespace":"selection_challenge:{g}:{t}:environment","experiment_id":"v35-production-001","master_seed":20260711,"selection_namespace":"generation:{g}:trial:{t}:environment","validation_namespace":"fixed_validation:{t}:environment"}
