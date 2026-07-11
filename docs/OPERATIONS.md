@@ -40,3 +40,21 @@ run_blast_pit.bat audit --experiment-id v35-production-001 --resume artifacts\v3
 Audit is one-shot for a provenance identity and idempotent only when that identity is unchanged. If interruption occurs after the release checkpoint but before manifest publication, rerun the identical audit command; v35 deterministically rebuilds the missing manifest.
 
 Exit codes: 0 success, 3 validation/provenance error, 5 interrupted with the last committed generation resumable.
+
+## Improvement controller v2
+
+From the repository root, use the Windows batch wrapper:
+
+```powershell
+.\run_codex_improvement_monitor.bat -Mode DryRun
+.\run_codex_improvement_monitor.bat -Mode Run -Cycles 1
+.\run_codex_improvement_monitor.bat -Mode Status
+.\run_codex_improvement_monitor.bat -Mode Review -Json
+.\run_codex_improvement_monitor.bat -Mode Verify -RunId <run-id>
+.\run_codex_improvement_monitor.bat -Mode Stop
+.\run_codex_improvement_monitor.bat -Mode InspectTerminal -RunId <run-id>
+```
+
+Run uses a 28,200-second controller budget and 28,800-second supervisor ceiling. Increase `-Cycles` only after reviewing prior evidence; values 1–10 are cumulative attempts, not version numbers or guaranteed accepted improvements. InspectTerminal verifies terminal evidence only and never resumes partial work.
+
+Operator exits: `0` verified/review-ready (or successful DryRun), `1` missing or ambiguous selection, `2` blocked/incomplete/controller failure, `3` tampered or inconsistent evidence, and `130` interrupted controller execution. Human review pending never authorizes push, merge, training, audit, promotion, export, or release.

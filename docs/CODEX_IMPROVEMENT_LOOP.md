@@ -2,11 +2,13 @@
 
 ## BLUF
 
-`run_codex_improvement_monitor.bat` launches `CodexLightRunner_v3.py`, which supervises `CodexImprovementController_v1.py`. The controller gives Codex an isolated Git worktree, permits changes to only the v37 implementation and focused v37 tests, reruns repository validation, trains a disposable development fixture, scores its checkpoint with the trusted `main` evaluator, and retains an accepted candidate as a local branch commit.
+`run_codex_improvement_monitor.bat` launches `CodexLightRunner_v3.py`, which supervises `CodexImprovementController_v2.py`. Every model role is tool-less and returns schema-validated JSON. The controller alone may validate and apply a bounded patch to a disposable candidate worktree, then run sandboxed tests and development evaluation. Seven specialist roles and independent final QA review each surviving candidate.
 
-It does not edit `main`, reuse terminal audit seeds, modify the completed `robustness-v37-8h-001` evidence, push branches, merge changes, run terminal audit, or release a policy.
+It does not edit the protected checkout, reuse terminal audit seeds, modify the completed `robustness-v37-8h-001` evidence, push branches, merge changes, run terminal audit, export, promote, or release a policy. A sealed 100/100 decision means ready for human review only.
 
-## State and authority
+## Historical v1 state and authority
+
+The following v1 sections and commands are retained only to interpret historical evidence. They are not the current launcher contract; use the controller v2 operations section below.
 
 The controller persists `BASELINE_EVALUATING`, `RUNNING`, per-cycle `WORKTREE_CREATING`, `CODEX_RUNNING`, `SECURITY_VALIDATING`, `TESTING`, `EVALUATING`, and terminal `ACCEPTED_CANDIDATE_BRANCH`, `REJECTED`, or `ERROR` states. The overall terminal state is `COMPLETE`.
 
@@ -32,7 +34,7 @@ The retained `approval_codex_improvement_v1.json` is the immutable controller v1
 
 These controls make the loop autonomous in proposing, testing, evaluating, and retaining candidates. They do not make it an operating-system sandbox or grant production authority.
 
-## Dry run
+## Historical v1 dry run
 
 ```powershell
 Set-Location 'E:\Code\Python\VirtualEnvironments\Blast_Pit\2d_Simulator'
@@ -41,7 +43,7 @@ Set-Location 'E:\Code\Python\VirtualEnvironments\Blast_Pit\2d_Simulator'
 
 The dry run verifies repository state and produces a deterministic baseline development score, but does not invoke Codex or create a candidate worktree.
 
-## Run and monitor
+## Historical v1 run and monitor
 
 ```powershell
 .\run_codex_improvement_monitor.bat -Cycles 1
@@ -69,7 +71,7 @@ New-Item '.\.supervisor_stop.codex-improvement-controller' -ItemType File
 
 Remove a stale stop file only after reviewing the retained runner and controller evidence.
 
-## Candidate review and promotion
+## Historical v1 candidate review
 
 The controller's `latest.json` records the final candidate commit, worktree, authorization hash, and evidence-manifest hash. Review the patch, tests, deterministic score, risks, raw-filesystem gate, production guard, manifest, and Git branch. A human may then open a pull request or reject the branch. Any production experiment after a source change requires a new experiment ID, seed commitment, fingerprint, and approval; historical approval must never be rewritten.
 
@@ -79,11 +81,11 @@ Controller v1.1 completed the corrected ten-cycle supervised run `20260711T18354
 
 Final QA invalidated cycle 10's controller acceptance. Commit `ff38a1b` changed Hall-of-Fame promotion behavior but declared category `process`; because v1.1 trusted that label, identical metrics bypassed the required algorithm improvement threshold. The retained evidence is valid and must not be rewritten, but `ff38a1b` is blocked from promotion. Commit `de3be87` is the last controller-accepted ancestor before that classification failure and remains candidate-only pending human review. Cycle 8 also created disposable self-evaluation files outside the sealed run under the Codex memory directory; those files are not trusted evaluation evidence.
 
-Controller v1.2 closes the category-bypass finding by treating every simulator-source change as algorithmic. It mitigates, but does not claim OS-level closure of, external writes by redirecting normal temporary output into the sealed per-cycle scratch directory and explicitly forbidding other locations in the prompt. The original v1.1 authorization remains unchanged; the launcher now selects the versioned v1.2 amendment. This validates fail-closed monitoring and evidence retention, not unattended promotion: no candidate was merged, pushed, audited, released, or used for production training, and any source-changed production experiment still requires updated documentation, a new experiment ID, seed commitment, fingerprint, and human approval.
+Controller v1.2 closes the category-bypass finding by treating every simulator-source change as algorithmic. It mitigates, but does not claim OS-level closure of, external writes by redirecting normal temporary output into the sealed per-cycle scratch directory and explicitly forbidding other locations in the prompt. The original v1.1 authorization remains unchanged; the launcher selected the versioned v1.2 amendment for that historical validation. This validates fail-closed monitoring and evidence retention, not unattended promotion: no candidate was merged, pushed, audited, released, or used for production training, and any source-changed production experiment still requires updated documentation, a new experiment ID, seed commitment, fingerprint, and human approval.
 
 The supported batch launcher then completed clean-tree v1.2 dry run `20260711T200515Z` from commit `6fe2eb3`. The controller loaded the shipped v1.2 amendment and its enforced v1.1 prior hash, reproduced the deterministic baseline, returned `DRY_RUN_COMPLETE`, proved `production_modified: false`, and sealed the controller bundle with manifest SHA-256 `96d1c12159614e56e6e0d753299205e3c78c3dcab53162b44511d56a0bbc2ba7`; CodexLightRunner returned `SUCCESS`.
 
-## Limitations
+## Historical v1 limitations
 
 - Development scores are deterministic screening evidence, not a terminal audit or proof of general superiority.
 - Codex authentication is inherited from the installed CLI; credentials are not recorded in evidence.
@@ -93,3 +95,23 @@ The supported batch launcher then completed clean-tree v1.2 dry run `20260711T20
 - A compromised operating-system account can exceed application-level controls; use a dedicated account or VM for stronger isolation.
 - The elevated Windows Codex backend can still write an explicitly named absolute path outside `TEMP`/`TMP`; use a disposable account or VM when external-write containment is mandatory.
 - The retained human authorization is a local authorization record, not a cryptographic signature. Renew it deliberately after expiry or any bound source/seed/allowlist change.
+
+## Controller v2 operations
+
+The supported Windows entrypoint is `run_codex_improvement_monitor.bat`. Controller v2 uses cumulative candidate ancestry, seven tool-less specialist roles, independent final QA, sandboxed validation/evaluation, and sealed operator decisions. The v1 history above remains immutable historical evidence.
+
+```powershell
+.\run_codex_improvement_monitor.bat -Mode DryRun
+.\run_codex_improvement_monitor.bat -Mode Run -Cycles 1
+.\run_codex_improvement_monitor.bat -Mode Status
+.\run_codex_improvement_monitor.bat -Mode Review
+.\run_codex_improvement_monitor.bat -Mode Verify -RunId <run-id>
+.\run_codex_improvement_monitor.bat -Mode Stop
+.\run_codex_improvement_monitor.bat -Mode InspectTerminal -RunId <run-id>
+```
+
+Run and DryRun use a 28,200-second controller budget inside the supervisor's absolute 28,800-second limit. `-Cycles 10` means attempt up to ten cumulative cycles before the shared deadline. A cycle may be accepted, rejected, time out, or fail; it is not a simulator version increment and does not imply v37 through v47.
+
+Builders and remediators are tool-less and return schema-validated, bounded unified patches; the controller applies an accepted patch inside the allowlisted sandbox. Seven specialist roles and final QA are also tool-less evidence reviewers. Candidate testing uses the sandbox, paired private Fold B screens cycle changes, and held-out Fold C supports final root adjudication. A 100/100 sealed decision means ready for human review only. It never authorizes merge, push, production training, terminal audit, export, promotion, or release.
+
+InspectTerminal verifies an already terminal immutable run. It does not resume partial work. A killed, timed-out, or partial run must be retained and followed by a fresh recovery run. Status/Review/Verify are read-only and use the operator contract documented in [CODEX_IMPROVEMENT_OPERATOR_V2.md](CODEX_IMPROVEMENT_OPERATOR_V2.md).

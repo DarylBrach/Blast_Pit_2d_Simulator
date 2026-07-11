@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adlerbaer.local/schemas/codex_build_result_v2.schema.json",
+  "title": "Codex Improvement Build Result v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "category", "hypothesis", "summary", "patch", "changed_files", "focused_tests", "risks", "documentation_recommendations", "behavior_changed", "authority_impact", "artifact_impact", "external_writes", "finding_ids_addressed"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "codex.build-result.v2"},
+    "category": {"type": "string", "enum": ["algorithm", "correctness", "process", "no_change"]},
+    "hypothesis": {"type": "string", "minLength": 1, "maxLength": 1000},
+    "summary": {"type": "string", "minLength": 1, "maxLength": 2000},
+    "patch": {"type": "string", "maxLength": 120000},
+    "changed_files": {"$ref": "#/$defs/paths"},
+    "focused_tests": {"$ref": "#/$defs/texts"},
+    "risks": {"$ref": "#/$defs/texts"},
+    "documentation_recommendations": {"$ref": "#/$defs/texts"},
+    "behavior_changed": {"type": "boolean"},
+    "authority_impact": {"type": "string", "enum": ["none", "approval_refresh_required", "authority_expansion_required"]},
+    "artifact_impact": {"type": "string", "enum": ["none", "schema_compatible", "new_lineage_required", "migration_required"]},
+    "external_writes": {"$ref": "#/$defs/paths"},
+    "finding_ids_addressed": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/finding_id"}}
+  },
+  "$defs": {
+    "finding_id": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,31}-[0-9]{3}$", "maxLength": 36},
+    "path": {"type": "string", "minLength": 1, "maxLength": 500},
+    "paths": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/path"}},
+    "texts": {"type": "array", "maxItems": 100, "items": {"type": "string", "minLength": 1, "maxLength": 1000}}
+  }
+}

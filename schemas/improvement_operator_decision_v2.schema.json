@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adlerbaer.local/schemas/improvement_operator_decision_v2.schema.json",
+  "title": "Codex Improvement Operator Decision v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "cycle", "execution", "review", "promotion", "cycle_gates", "lineage", "reviews", "rubric", "blockers", "warnings", "promotion_authorized", "release_authorized"],
+  "properties": {
+    "schema_version": {"const": "codex.improvement-operator-decision.v2"},
+    "run_id": {"type": "string", "pattern": "^[A-Za-z0-9_.-]{1,80}$"},
+    "cycle": {"type": "integer", "minimum": 1, "maximum": 10000},
+    "execution": {"enum": ["NOT_RUN", "RUNNING", "SUCCESS", "FAILED", "TIMEOUT", "KILLED"]},
+    "review": {"enum": ["NOT_RUN", "RUNNING", "PASS", "CHANGES_REQUIRED", "BLOCK"]},
+    "promotion": {"enum": ["NOT_RUN", "NOT_ELIGIBLE", "HUMAN_REVIEW_PENDING", "REJECTED"]},
+    "cycle_gates": {"type": "array", "minItems": 1, "maxItems": 100, "items": {"$ref": "#/$defs/gate"}},
+    "lineage": {"$ref": "#/$defs/lineage"},
+    "reviews": {"type": "array", "maxItems": 50, "items": {"$ref": "#/$defs/review"}},
+    "rubric": {"$ref": "#/$defs/rubric"},
+    "blockers": {"$ref": "#/$defs/texts"},
+    "warnings": {"$ref": "#/$defs/texts"},
+    "promotion_authorized": {"const": false},
+    "release_authorized": {"const": false}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "git_commit": {"type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"},
+    "text": {"type": "string", "minLength": 1, "maxLength": 1500},
+    "texts": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/text"}},
+    "gate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "status", "evidence"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{1,63}$"},
+        "status": {"enum": ["NOT_RUN", "RUNNING", "PASS", "FAIL", "TIMEOUT", "SKIPPED"]},
+        "evidence": {"type": ["string", "null"], "maxLength": 1000}
+      }
+    },
+    "lineage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["base_commit", "candidate_commit", "diff_sha256", "worktree", "production_modified"],
+      "properties": {
+        "base_commit": {"$ref": "#/$defs/git_commit"},
+        "candidate_commit": {"anyOf": [{"$ref": "#/$defs/git_commit"}, {"type": "null"}]},
+        "diff_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+        "worktree": {"type": "string", "minLength": 1, "maxLength": 500},
+        "production_modified": {"type": "boolean"}
+      }
+    },
+    "review": {
+      "type": "object", "additionalProperties": false,
+      "required": ["role", "status", "artifact"],
+      "properties": {
+        "role": {"enum": ["architecture_state", "algorithm_objective", "workflow_state", "governance_evidence", "security_sandbox", "testing_reliability", "docs_ux", "final_qa"]},
+        "status": {"enum": ["NOT_RUN", "RUNNING", "PASS", "CHANGES_REQUIRED", "BLOCK", "TIMEOUT", "ERROR"]},
+        "artifact": {"type": ["string", "null"], "maxLength": 500}
+      }
+    },
+    "rubric_item": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "score", "maximum", "evidence"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{1,63}$"},
+        "score": {"type": "integer", "minimum": 0, "maximum": 10},
+        "maximum": {"const": 10},
+        "evidence": {"$ref": "#/$defs/text"}
+      }
+    },
+    "rubric": {
+      "type": "object", "additionalProperties": false,
+      "required": ["items", "total", "maximum", "ten_out_of_ten"],
+      "properties": {
+        "items": {"type": "array", "minItems": 10, "maxItems": 10, "items": {"$ref": "#/$defs/rubric_item"}},
+        "total": {"type": "integer", "minimum": 0, "maximum": 100},
+        "maximum": {"const": 100},
+        "ten_out_of_ten": {"type": "boolean"}
+      }
+    }
+  }
+}

@@ -13,3 +13,13 @@ Install into the active interpreter with `python -m pip`, not an ambiguous `pip`
 `run_v37_8h.ps1` fails on a dirty worktree: inspect `git status --short`; commit intentional source/docs changes and do not hide unexplained drift. Missing `approval_v37_8h_001.json` or `audit_seeds_v37_8h_001_committed.txt` is an intentional governance stop, not a launcher defect. Generate and review exact scoped inputs; never copy or rename approval from another experiment.
 
 `stale scoped kill switch`: inspect runner state and running processes before removing `.supervisor_stop.robustness-v37-8h-001`. `BUDGET_EXHAUSTED`: confirm checkpoint status, remove no retained artifacts, run the launcher dry-run, then resume with the identical approved generation ceiling. `TIMEOUT` or `KILLED`: verify the full child tree exited and validate the last committed checkpoint before resume. Never audit until status reports `TRAINING_COMPLETE` and zero remaining generations.
+
+## Improvement controller v2
+
+`Run or DryRun rejects a dirty checkout`: inspect `git status --short`; do not hide or discard unexplained changes. `stale v2 stop file`: confirm the previous supervisor stopped before removing `.supervisor_stop.codex-improvement-controller-v2`.
+
+Exit `2` can mean a correctly completed but blocked run, a rejected/no-candidate result, timeout, or controller failure. Run Status and Review for the disposition, then Verify for evidence integrity. Exit `3` from Verify means missing, extra, mismatched, unsafe, or tampered evidence; retain the bundle and do not reseal it manually.
+
+InspectTerminal accepts only an immutable terminal run ID. A partial or killed run cannot continue in place. Preserve it, investigate runner/controller evidence, and start a fresh recovery run. If the local ledger is missing or disagrees, the operator fails closed because the same-machine tamper-evident chain is incomplete.
+
+`jsonschema is required for governed v2 validation`: install the repository requirements with the same interpreter configured in the launcher: `& $Python -m pip install -r .\requirements.txt`. Then rerun the full suite and DryRun; do not bypass schema validation.

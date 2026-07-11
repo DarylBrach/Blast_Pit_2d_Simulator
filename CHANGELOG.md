@@ -1,5 +1,10 @@
 # Changelog
 
+- Added the governed v2 tool-less improvement harness with seven independent specialist roles, final QA, paired private Fold B and held-out Fold C evaluation, qualified unelevated Windows sandboxing, kill-on-close Job Objects, transition/cycle/run manifests, and a local tamper-evident ledger.
+- Added supported Run, DryRun, Status, Review, Verify, Stop, and terminal-only InspectTerminal launcher modes with an eight-hour outer supervisor cap.
+- Added strict read-only operator decisions: execution success is separate from human-review readiness, and promotion/release authority is always false.
+- Qualified the frozen v2 source with the launch interpreter: 188 tests passed; two symlink-containment tests skipped because this Windows host does not permit symlink creation. Python compilation and PowerShell launcher parsing passed.
+
 - Added a CodexLightRunner-supervised, worktree-isolated Codex improvement controller with structured proposals, security and test gates, trusted deterministic scoring, and candidate-branch-only retention.
 - Bound the controller to an expiring parent human authorization and explicitly labeled disposable fixture records as controller development delegations.
 - Added an eight-hour supervisor/authorization ceiling, minimal and redacted Codex environment, raw-filesystem comparison, pre/post production evidence, and recursive SHA-256 evidence sealing.

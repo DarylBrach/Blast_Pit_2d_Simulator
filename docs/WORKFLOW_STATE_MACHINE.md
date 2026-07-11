@@ -14,3 +14,9 @@ TRAINING -> TRAINING_COMPLETE -> AUDIT_COMMITTED(PASS|FAIL)
 ```
 
 Timeout, kill, or interruption during evaluation cannot commit a partial generation. The last validated checkpoint remains authoritative. Divergent checkpoint/JSONL history, configuration drift, approval drift, or an occupied directory without a valid resume checkpoint fails closed.
+
+## Improvement controller v2
+
+Controller execution and review disposition are separate. Terminal controller states include `DRY_RUN_COMPLETE`, `COMPLETE`, `COMPLETE_WITH_REJECTIONS`, `COMPLETE_WITH_ERRORS`, `TIMEOUT`, and `KILLED`. A successful execution can still be blocked from human review.
+
+Only a sealed decision with execution `SUCCESS`, review `PASS`, promotion state `HUMAN_REVIEW_PENDING`, all twelve gates passing, eight review artifacts passing, no blockers, unmodified production, and a 100/100 rubric is review-ready. Even then, automatic promotion and release remain false. InspectTerminal verifies terminal evidence; partial runs are immutable and are never resumed in place.

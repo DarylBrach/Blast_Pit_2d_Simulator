@@ -269,9 +269,11 @@ def test_shipped_v12_authorization_loads_against_current_sources(tmp_path):
     assert digest == controller.canonical_text_sha256(active.authorization)
 
 
-def test_launcher_selects_versioned_v12_authorization():
+def test_launcher_selects_governed_v2_while_v12_remains_reproducible():
     launcher = (Path(__file__).parent / "run_codex_improvement_monitor.ps1").read_text(encoding="utf-8")
-    assert "approval_codex_improvement_v1_2.json" in launcher
+    assert "approval_codex_improvement_v2.json" in launcher
+    assert "CodexImprovementController_v2.py" in launcher
+    assert "CodexImprovementController_v1.py" not in launcher
 
 
 def test_schema_requires_governed_fields():

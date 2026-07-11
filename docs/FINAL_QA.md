@@ -22,3 +22,7 @@ The following checklist remains release qualification work; unchecked narrative 
 - Confirm the source contains no network or subprocess calls.
 - Record benchmark, ZIP SHA-256, and release inventory.
 - Exclude `.venv`, caches, temporary artifacts, and real audit outputs from distribution.
+
+## Improvement harness v2 QA boundary
+
+A v2 result is review-ready only when the root decision is 100/100 with every deterministic gate, all seven specialists, independent final QA, Fold C evaluation, and production protection passing. Status `COMPLETE` alone is insufficient. `COMPLETE_WITH_REJECTIONS` may represent successful controller execution but remains subject to the root decision. No harness QA result authorizes production use or release.
