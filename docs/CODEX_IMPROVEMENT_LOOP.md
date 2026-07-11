@@ -81,6 +81,8 @@ Final QA invalidated cycle 10's controller acceptance. Commit `ff38a1b` changed 
 
 Controller v1.2 closes the category-bypass finding by treating every simulator-source change as algorithmic. It mitigates, but does not claim OS-level closure of, external writes by redirecting normal temporary output into the sealed per-cycle scratch directory and explicitly forbidding other locations in the prompt. The original v1.1 authorization remains unchanged; the launcher now selects the versioned v1.2 amendment. This validates fail-closed monitoring and evidence retention, not unattended promotion: no candidate was merged, pushed, audited, released, or used for production training, and any source-changed production experiment still requires updated documentation, a new experiment ID, seed commitment, fingerprint, and human approval.
 
+The supported batch launcher then completed clean-tree v1.2 dry run `20260711T200515Z` from commit `6fe2eb3`. The controller loaded the shipped v1.2 amendment and its enforced v1.1 prior hash, reproduced the deterministic baseline, returned `DRY_RUN_COMPLETE`, proved `production_modified: false`, and sealed the controller bundle with manifest SHA-256 `96d1c12159614e56e6e0d753299205e3c78c3dcab53162b44511d56a0bbc2ba7`; CodexLightRunner returned `SUCCESS`.
+
 ## Limitations
 
 - Development scores are deterministic screening evidence, not a terminal audit or proof of general superiority.

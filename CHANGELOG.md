@@ -11,6 +11,7 @@
 - Fail-closed every simulator-source change as effective category `algorithm`, regardless of the proposing agent's label, so renamed or novel training behavior cannot bypass the improvement threshold.
 - Redirected Codex `TEMP`/`TMP` and cooperative disposable work to an evidence-sealed per-cycle scratch directory; the prompt forbids other paths, while documentation explicitly retains the elevated-backend containment limitation.
 - Preserved the immutable v1.1 authorization and added a separate hash-linked v1.2 authorization amendment selected by the launcher.
+- Validated the shipped v1.2 amendment and controller through supported-launcher dry run `20260711T200515Z`; baseline evaluation, production guard, evidence sealing, and runner classification all passed.
 
 ## v35
 
