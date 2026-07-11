@@ -117,11 +117,20 @@ def test_prompt_contains_production_evidence_and_constraints():
 
 
 def test_prompt_carries_rejection_lessons():
-    prior={"cycle":1,"status":"REJECTED","codex_decision":{"hypothesis":"mutate all actors"},"reasons":["mean regression"],"candidate_score":{"mean":.4}}
+    prior={"cycle":1,"status":"REJECTED","codex_decision":{"hypothesis":"mutate all actors","summary":"left temp evidence","risks":["mean declined"]},"reasons":["mean regression"],"candidate_score":{"mean":.4}}
     prompt=controller.prompt_for_cycle({"cvar":.5},{"generation":99,"challenge_cvar":.6,"workflow_state":"TRAINING_COMPLETE","hof_policy_hash":"abc"},2,[prior])
     assert "mutate all actors" in prompt
     assert "mean regression" in prompt
+    assert "left temp evidence" in prompt and "mean declined" in prompt
     assert "do not repeat" in prompt
+
+
+def test_historical_lessons_span_completed_runs(tmp_path):
+    for name,hypothesis in (("20260711T010000Z","older accepted"),("20260711T020000Z","newer rejected")):
+        run=tmp_path/name; run.mkdir()
+        (run/"state.json").write_text(json.dumps({"cycles":[{"cycle":1,"codex_decision":{"hypothesis":hypothesis}}]}))
+    lessons=controller.historical_lessons(tmp_path)
+    assert [row["codex_decision"]["hypothesis"] for row in lessons]==["older accepted","newer rejected"]
 
 
 def test_metric_gate_checks_standard_profile_regression():

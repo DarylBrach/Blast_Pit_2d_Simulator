@@ -3,6 +3,7 @@
 - Added a CodexLightRunner-supervised, worktree-isolated Codex improvement controller with structured proposals, security and test gates, trusted deterministic scoring, and candidate-branch-only retention.
 - Bound the controller to an expiring parent human authorization and explicitly labeled disposable fixture records as controller development delegations.
 - Added an eight-hour supervisor/authorization ceiling, minimal and redacted Codex environment, raw-filesystem comparison, pre/post production evidence, and recursive SHA-256 evidence sealing.
+- Carried accepted and rejected lessons across multiple completed controller runs, including summaries, risks, scores, and raw-gate failures.
 
 ## v35
 

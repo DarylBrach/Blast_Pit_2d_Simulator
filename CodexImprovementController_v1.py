@@ -230,6 +230,25 @@ def filesystem_gate(worktree: Path, cycle_dir: Path) -> tuple[bool, list[str]]:
     return not reasons, reasons
 
 
+def historical_lessons(artifact_root: Path, limit: int = 6) -> list[dict[str, Any]]:
+    lessons: list[dict[str, Any]] = []
+    if not artifact_root.exists():
+        return lessons
+    for run_dir in sorted((path for path in artifact_root.iterdir() if path.is_dir()), reverse=True):
+        state_path = run_dir / "state.json"
+        if not state_path.is_file():
+            continue
+        try:
+            cycles = json.loads(state_path.read_text(encoding="utf-8")).get("cycles", [])
+        except (OSError, json.JSONDecodeError):
+            continue
+        for cycle in reversed(cycles):
+            lessons.append(cycle)
+            if len(lessons) >= limit:
+                return list(reversed(lessons))
+    return list(reversed(lessons))
+
+
 def codex_environment() -> tuple[dict[str, str], list[str]]:
     env = {key: value for key, value in os.environ.items() if key.upper() in CODEX_ENV_ALLOWLIST}
     secrets = [value for key, value in env.items() if SENSITIVE_ENV_NAME.search(key) and len(value) >= 4]
@@ -395,6 +414,7 @@ def create_worktree(config: ControllerConfig, base_ref: str, branch: str, worktr
 def prompt_for_cycle(base_score: dict[str, Any], production: dict[str, Any], cycle: int,
                      prior_cycles: Sequence[dict[str,Any]] = ()) -> str:
     lessons=[{"cycle":item.get("cycle"),"status":item.get("status"),"hypothesis":item.get("codex_decision",{}).get("hypothesis"),
+              "summary":item.get("codex_decision",{}).get("summary"),"risks":item.get("codex_decision",{}).get("risks",[]),
               "reasons":item.get("reasons",[]),"candidate_score":item.get("candidate_score")} for item in prior_cycles]
     return f"""You are improving the Blast_Pit v37 training process in an isolated candidate Git worktree.
 
@@ -422,6 +442,7 @@ Hard constraints:
 5. Keep deterministic behavior and checkpoint resume parity.
 6. Run the focused tests and full pytest suite.
 7. If no defensible improvement is possible, make no changes and return category no_change.
+8. Put disposable evaluation artifacts outside the worktree or remove them before finishing; ignored files are still rejected by the raw-filesystem gate.
 
 Prefer a process/correctness improvement with measurable non-regression. Algorithm changes must be small and explain why the trusted deterministic development score should improve. Your final response must satisfy the supplied JSON schema."""
 
@@ -544,7 +565,7 @@ def run(config: ControllerConfig) -> int:
     run_dir.mkdir(parents=True, exist_ok=False)
     previous_state_path=config.artifact_root/"latest.json"
     previous_state=json.loads(previous_state_path.read_text(encoding="utf-8")) if previous_state_path.is_file() else {}
-    historical_cycles=list(previous_state.get("cycles",[]))[-3:]
+    historical_cycles=historical_lessons(config.artifact_root)
     protection_before = protection_snapshot(config)
     atomic_json(run_dir / "production_guard_before.json", protection_before)
     atomic_json(run_dir / "authorization.json", {"path": str(config.authorization), "sha256": authorization_sha256, "record": authorization})
