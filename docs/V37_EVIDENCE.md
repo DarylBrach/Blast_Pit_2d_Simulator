@@ -14,4 +14,4 @@ For `robustness-v37-8h-001`, the launcher adds a separate operator evidence laye
 
 `approval_v37_8h_001.json` and `audit_seeds_v37_8h_001_committed.txt` are the reviewed inputs for the new lineage. They bind the human-owner authorization, frozen implementation and baseline, 100-generation ceiling, runtime boundary, and fresh 64-seed commitment. An older approval is not evidence for this lineage. Seal completed evidence with a recursive SHA-256 manifest after all writers exit; disclose any later worktree dirtiness rather than rewriting retained evidence.
 
-The governed Python-source identity canonicalizes CRLF and LF to LF before SHA-256 hashing. Git checkout line-ending conversion therefore cannot invalidate an otherwise identical approval; textual source changes still change the fingerprint.
+Governed text identities for Python source and the audit-seed commitment canonicalize CRLF and LF to LF before SHA-256 hashing. Git checkout line-ending conversion therefore cannot invalidate otherwise identical approval evidence; textual changes still change the fingerprint.

@@ -42,10 +42,19 @@ def file_evidence(path: Path) -> dict[str, object]:
     return {"path": str(path.resolve()), "bytes": path.stat().st_size, "sha256": digest}
 
 
+def canonical_text_bytes(path: Path) -> bytes:
+    return path.read_bytes().replace(b"\r\n",b"\n").replace(b"\r",b"\n")
+
+
 def canonical_source_sha256(path: Path) -> str:
-    """Hash text source independent of Git/Windows line-ending conversion."""
-    data=path.read_bytes().replace(b"\r\n",b"\n").replace(b"\r",b"\n")
+    """Hash governed text independent of Git/Windows line-ending conversion."""
+    data=canonical_text_bytes(path)
     return hashlib.sha256(data).hexdigest()
+
+
+def canonical_text_evidence(path: Path) -> dict[str,object]:
+    data=canonical_text_bytes(path)
+    return {"path":str(path.resolve()),"bytes":len(data),"sha256":hashlib.sha256(data).hexdigest(),"canonical_newlines":"LF"}
 
 
 def stable_seed(master: int, *parts: object) -> int:
@@ -367,7 +376,7 @@ def runtime_allows_generation(started: float,max_runtime_seconds: int,runtime_gr
 
 
 def experiment_fingerprint(source: Path, simulation, ppo, robustness, audit_seed_file: Path):
-    return sha256_json({"app":APP_VERSION,"algorithm":ALGORITHM,"critic_schema":CRITIC_SCHEMA,"simulation":asdict(simulation),"ppo":asdict(ppo),"robustness":asdict(robustness),"v36_checkpoint":file_evidence(source)["sha256"],"audit_seed_commitment":file_evidence(audit_seed_file)["sha256"],"v37_source":canonical_source_sha256(Path(__file__))})
+    return sha256_json({"app":APP_VERSION,"algorithm":ALGORITHM,"critic_schema":CRITIC_SCHEMA,"simulation":asdict(simulation),"ppo":asdict(ppo),"robustness":asdict(robustness),"v36_checkpoint":file_evidence(source)["sha256"],"audit_seed_commitment":canonical_text_evidence(audit_seed_file)["sha256"],"v37_source":canonical_source_sha256(Path(__file__))})
 
 
 def load_approval(path: Path,experiment_id: str,fingerprint: str,action: str,*,source: Path|None=None,audit_seed_file: Path|None=None,
@@ -381,7 +390,7 @@ def load_approval(path: Path,experiment_id: str,fingerprint: str,action: str,*,s
         raise ValueError("v37 approval scope mismatch")
     expected={
         "source_v36_checkpoint_sha256": file_evidence(source)["sha256"] if source else None,
-        "audit_seed_commitment_sha256": file_evidence(audit_seed_file)["sha256"] if audit_seed_file else None,
+        "audit_seed_commitment_sha256": canonical_text_evidence(audit_seed_file)["sha256"] if audit_seed_file else None,
         "v37_source_sha256": canonical_source_sha256(Path(__file__)),
         "approved_total_generations": planned_generations,
         "approved_max_runtime_seconds": max_runtime_seconds,
@@ -452,7 +461,7 @@ def train(args) -> int:
             if score>hof_score: hof=RobustCandidate(nominee.candidate_id,nominee.policy.copy(),RobustAdam.zeros(nominee.policy),nominee.source_policy_hash,nominee.source_kind); hof_score=score
         record={"schema_version":SCHEMA_VERSION,"generation":generation,"previous_record_hash":record_hash,"fingerprint":fingerprint,"approval_digest":approval_digest,"robustness":asdict(robust),"candidates":[{"candidate_id":c.candidate_id,"policy_hash":c.policy.policy_hash,"source_policy_hash":c.source_policy_hash,"source_kind":c.source_kind,**c.report} for c in ranked],"hof":{"candidate_id":hof.candidate_id,"policy_hash":hof.policy.policy_hash,"challenge_cvar":hof_score},"source_v36":file_evidence(args.source_v36)}
         record["record_hash"]=sha256_json(record); record_hash=record["record_hash"]
-        metadata={"schema_version":SCHEMA_VERSION,"algorithm":ALGORITHM,"record":record,"record_hash":record_hash,"generation":generation,"hof":record["hof"],"fingerprint":fingerprint,"robustness":asdict(robust),"workflow_state":"GENERATION_COMMITTED","master_seed":args.seed,"simulation":asdict(simulation),"ppo":asdict(ppo),"planned_generations":args.generations,"critic_schema":CRITIC_SCHEMA,"source_v36":file_evidence(args.source_v36),"audit_seed_commitment":file_evidence(args.audit_seed_file)}
+        metadata={"schema_version":SCHEMA_VERSION,"algorithm":ALGORITHM,"record":record,"record_hash":record_hash,"generation":generation,"hof":record["hof"],"fingerprint":fingerprint,"robustness":asdict(robust),"workflow_state":"GENERATION_COMMITTED","master_seed":args.seed,"simulation":asdict(simulation),"ppo":asdict(ppo),"planned_generations":args.generations,"critic_schema":CRITIC_SCHEMA,"source_v36":file_evidence(args.source_v36),"audit_seed_commitment":canonical_text_evidence(args.audit_seed_file)}
         save_checkpoint(checkpoint,metadata,candidates,hof)
         with journal.open("a",encoding="utf-8") as handle: handle.write(canonical_json(record)+"\n"); handle.flush(); os.fsync(handle.fileno())
         completed=generation+1; last_generation_seconds=time.monotonic()-generation_started
@@ -502,7 +511,7 @@ def audit(args):
     if count<32: raise ValueError("v37 audit requires at least 32 trials")
     if count*3*simulation.max_frames>MAX_FRAMES_BUDGET: raise ValueError("v37 audit exceeds frame budget")
     if int(metadata["generation"])+1!=int(metadata["planned_generations"]): raise ValueError("v37 training plan is incomplete")
-    if metadata["source_v36"]["sha256"]!=file_evidence(args.v36_checkpoint)["sha256"] or metadata["audit_seed_commitment"]["sha256"]!=file_evidence(args.audit_seed_file)["sha256"]: raise ValueError("v37 source or audit commitment mismatch")
+    if metadata["source_v36"]["sha256"]!=file_evidence(args.v36_checkpoint)["sha256"] or metadata["audit_seed_commitment"]["sha256"]!=canonical_text_evidence(args.audit_seed_file)["sha256"]: raise ValueError("v37 source or audit commitment mismatch")
     current_fingerprint=experiment_fingerprint(args.v36_checkpoint,simulation,v36.PPOConfig(**metadata["ppo"]),RobustnessConfig(**metadata["robustness"]),args.audit_seed_file)
     if current_fingerprint!=fingerprint: raise ValueError("v37 implementation fingerprint drift")
     if any(getattr(v35_config,name)!=getattr(simulation,name) for name in ("width","height","cell_size","hidden1","hidden2","lineage_cap")): raise ValueError("baseline environment/actor contract mismatch")
@@ -517,7 +526,7 @@ def audit(args):
             t=results[name][i]; row[name]={"fitness":t.fitness,"early_extinction":bool(t.metrics["early_extinction"]),"components":t.components,"metrics":{k:t.metrics[k] for k in ("hydrated_alive_frames","severe_thirst_frames","fire_contact_frames","water_recoveries","water_recovery_opportunities","final_population") if k in t.metrics}}
         pairs.append(row)
     deltas={baseline:[pairs[i]["v37"]["fitness"]-pairs[i][baseline]["fitness"] for i in range(count)] for baseline in ("v35","v36")}
-    record={"schema_version":"v37.audit.v1","experiment_id":args.experiment_id,"workflow_state":"AUDIT_COMMITTED","approval_digest":approval_digest,"audit_trials":count,"profile_balance":{"standard":count//2,"challenge":count//2},"seed_suite_hash":sha256_json(seeds),"seed_commitment_file":file_evidence(args.audit_seed_file),"checkpoints":{"v37":file_evidence(args.checkpoint),"v36":file_evidence(args.v36_checkpoint),"v35":file_evidence(args.v35_checkpoint)},"policy_hashes":{"v37":v37_policy.policy_hash,"v36":v36_hof.policy.policy_hash,"v35":v35_brain.genome_hash},"summaries":summaries,"paired_mean_delta_ci95":{name:bootstrap_ci(values,stable_seed(37,"bootstrap",name)) for name,values in deltas.items()},"pairs":pairs,"created_utc":datetime.now(timezone.utc).isoformat()}
+    record={"schema_version":"v37.audit.v1","experiment_id":args.experiment_id,"workflow_state":"AUDIT_COMMITTED","approval_digest":approval_digest,"audit_trials":count,"profile_balance":{"standard":count//2,"challenge":count//2},"seed_suite_hash":sha256_json(seeds),"seed_commitment_file":canonical_text_evidence(args.audit_seed_file),"checkpoints":{"v37":file_evidence(args.checkpoint),"v36":file_evidence(args.v36_checkpoint),"v35":file_evidence(args.v35_checkpoint)},"policy_hashes":{"v37":v37_policy.policy_hash,"v36":v36_hof.policy.policy_hash,"v35":v35_brain.genome_hash},"summaries":summaries,"paired_mean_delta_ci95":{name:bootstrap_ci(values,stable_seed(37,"bootstrap",name)) for name,values in deltas.items()},"pairs":pairs,"created_utc":datetime.now(timezone.utc).isoformat()}
     record["release_gate"]="PASS" if all(summaries["v37"]["cvar"]>=summaries[b]["cvar"] and summaries["v37"]["early_extinction_rate"]<=summaries[b]["early_extinction_rate"] and summaries["v37"]["standard_mean"]>=summaries[b]["standard_mean"]*.95 for b in ("v35","v36")) else "FAIL"
     record["record_hash"]=sha256_json(record); output=args.checkpoint.with_name("terminal_audit_v37.json")
     if output.exists(): raise ValueError("v37 terminal audit already exists")
