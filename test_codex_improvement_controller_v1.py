@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -58,6 +59,66 @@ def test_metric_gate_requires_algorithm_improvement():
     passed, reasons = controller.metric_gate("algorithm", baseline, candidate)
     assert not passed
     assert "lacks required" in reasons[0]
+
+
+def test_category_classifier_forces_hof_promotion_change_to_algorithm():
+    diff = """diff --git a/tmp_2d_simulator_v37.py b/tmp_2d_simulator_v37.py
+--- a/tmp_2d_simulator_v37.py
++++ b/tmp_2d_simulator_v37.py
+@@ -1 +1,2 @@
++def promotion_allowed(challenger, incumbent, robustness):
++    return challenger[\"robust_score\"] > incumbent[\"robust_score\"]
+"""
+    effective, indicators = controller.classify_candidate_category("process", diff)
+    assert effective == "algorithm"
+    assert indicators
+
+
+def test_category_classifier_fail_closes_status_source_hardening_as_algorithm():
+    diff = """diff --git a/tmp_2d_simulator_v37.py b/tmp_2d_simulator_v37.py
+--- a/tmp_2d_simulator_v37.py
++++ b/tmp_2d_simulator_v37.py
+@@ -1 +1,2 @@
++def report_status(path):
++    return {\"planned_generations\": 100, \"hof_policy_hash\": \"abc\"}
+"""
+    effective, indicators = controller.classify_candidate_category("correctness", diff)
+    assert effective == "algorithm"
+    assert indicators
+
+
+@pytest.mark.parametrize("changed_line", [
+    "+def may_promote(candidate): return True",
+    "+score = candidate.hidden_metric",
+    "+ranked = sorted(candidates, key=lambda item: item.new_key)",
+    "+optimizer_step *= 0.5",
+    "+profiles = [\"standard\"] * 4",
+    "+def innocuous_name(value): return value + 1",
+])
+def test_category_classifier_forces_unmatched_source_behavior_to_algorithm(changed_line):
+    diff = (
+        "diff --git a/tmp_2d_simulator_v37.py b/tmp_2d_simulator_v37.py\n"
+        "--- a/tmp_2d_simulator_v37.py\n+++ b/tmp_2d_simulator_v37.py\n@@ -1 +1,2 @@\n"
+        f"{changed_line}\n"
+    )
+    assert controller.classify_candidate_category("process", diff)[0] == "algorithm"
+
+
+def test_category_classifier_preserves_test_only_process_change():
+    diff = "diff --git a/test_tmp_2d_simulator_v37.py b/test_tmp_2d_simulator_v37.py\n+def test_more(): pass\n"
+    assert controller.classify_candidate_category("process", diff) == ("process", [])
+
+
+def test_forced_algorithm_category_uses_improvement_threshold():
+    baseline = {"cvar": 0.5, "mean": 0.6, "standard_mean": 0.7, "early_extinction_rate": 0.1}
+    candidate = dict(baseline)
+    effective, _ = controller.classify_candidate_category(
+        "process",
+        "diff --git a/tmp_2d_simulator_v37.py b/tmp_2d_simulator_v37.py\n+def validation_summary(trials): pass\n",
+    )
+    passed, reasons = controller.metric_gate(effective, baseline, candidate)
+    assert not passed
+    assert any("algorithm change" in reason for reason in reasons)
 
 
 def test_metric_gate_rejects_extinction_regression():
@@ -116,6 +177,19 @@ def test_prompt_contains_production_evidence_and_constraints():
     assert "terminal audit" in prompt
 
 
+def test_prompt_confines_disposable_artifacts_to_controller_scratch(tmp_path):
+    scratch = tmp_path / "cycle" / "codex_scratch"
+    prompt = controller.prompt_for_cycle(
+        {"cvar": 0.5},
+        {"generation": 99, "challenge_cvar": 0.6, "workflow_state": "TRAINING_COMPLETE", "hof_policy_hash": "abc"},
+        1,
+        scratch_dir=scratch,
+    )
+    assert str(scratch) in prompt
+    assert "do not run parameter sweeps" in prompt
+    assert "Codex memory directory" in prompt
+
+
 def test_prompt_carries_rejection_lessons():
     prior={"cycle":1,"status":"REJECTED","codex_decision":{"hypothesis":"mutate all actors","summary":"left temp evidence","risks":["mean declined"]},"reasons":["mean regression"],"candidate_score":{"mean":.4}}
     prompt=controller.prompt_for_cycle({"cvar":.5},{"generation":99,"challenge_cvar":.6,"workflow_state":"TRAINING_COMPLETE","hof_policy_hash":"abc"},2,[prior])
@@ -169,6 +243,37 @@ def test_canonical_authorization_hash_ignores_line_endings(tmp_path):
     assert controller.canonical_text_sha256(lf)==controller.canonical_text_sha256(crlf)
 
 
+def test_versioned_authorization_validates_immutable_prior_hash(tmp_path):
+    prior = tmp_path / "approval_codex_improvement_v1.json"
+    prior.write_text('{"version":"1.1"}\n', encoding="utf-8")
+    record = {
+        "prior_authorization_path": prior.name,
+        "prior_authorization_sha256": controller.canonical_text_sha256(prior),
+    }
+    controller.validate_prior_authorization(tmp_path, record)
+    record["prior_authorization_sha256"] = "0" * 64
+    with pytest.raises(controller.ImprovementError, match="hash mismatch"):
+        controller.validate_prior_authorization(tmp_path, record)
+    with pytest.raises(controller.ImprovementError, match="path is invalid"):
+        controller.validate_prior_authorization(tmp_path, {})
+    record["prior_authorization_path"] = "different.json"
+    with pytest.raises(controller.ImprovementError, match="path is invalid"):
+        controller.validate_prior_authorization(tmp_path, record)
+
+
+def test_shipped_v12_authorization_loads_against_current_sources(tmp_path):
+    repo = Path(__file__).parent
+    active = replace(config(repo, tmp_path), authorization=repo / "approval_codex_improvement_v1_2.json")
+    record, digest = controller.load_authorization(active)
+    assert record["controller_version"] == controller.VERSION == "1.2.0"
+    assert digest == controller.canonical_text_sha256(active.authorization)
+
+
+def test_launcher_selects_versioned_v12_authorization():
+    launcher = (Path(__file__).parent / "run_codex_improvement_monitor.ps1").read_text(encoding="utf-8")
+    assert "approval_codex_improvement_v1_2.json" in launcher
+
+
 def test_schema_requires_governed_fields():
     schema = json.loads((Path(__file__).parent / "schemas" / "codex_improvement_result.schema.json").read_text())
     assert set(schema["required"]) == {"category", "hypothesis", "summary", "changed_files", "tests_run", "risks"}
@@ -200,6 +305,14 @@ def test_codex_environment_is_minimal_and_identifies_redactions(monkeypatch):
     assert "UNRELATED_PRIVATE_VALUE" not in env
     assert env["OPENAI_API_KEY"]=="test-key-value"
     assert secrets==["test-key-value"]
+
+
+def test_codex_environment_redirects_temp_to_sealed_scratch(tmp_path):
+    scratch = tmp_path / "cycle" / "codex_scratch"
+    env, _ = controller.codex_environment(scratch)
+    assert env["TEMP"] == env["TMP"] == str(scratch)
+    assert env["CODEX_CANDIDATE_SCRATCH"] == str(scratch)
+    assert scratch.is_dir()
 
 
 def test_filesystem_gate_rejects_raw_change_outside_allowlist(tmp_path):

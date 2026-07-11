@@ -6,7 +6,11 @@
 - Carried accepted and rejected lessons across multiple completed controller runs, including summaries, risks, scores, and raw-gate failures.
 - Compacted multi-run lessons to decision-relevant metrics and bounded text so Windows can launch Codex reliably.
 - Bounded the combined cross-run and same-run lesson window to the six most recent cycles, preventing Windows command-line overflow late in long controller runs.
-- Validated autonomous correction and retention in controller run `20260711T171731Z`; candidate `47da614` passed 83 tests and trusted metrics while production remained unchanged and the 34-file evidence bundle was sealed.
+- Completed ten-cycle controller run `20260711T183548Z` with a successful supervisor result, six controller-accepted cycles, four rejected cycles, 89 final-candidate tests, unchanged production, and a fully revalidated 206-file evidence seal.
+- Recorded final-QA rejection of cycle 10 commit `ff38a1b`: an algorithmic Hall-of-Fame promotion change self-labeled as process and bypassed the v1.1 improvement threshold. Retained evidence remains immutable; `de3be87` is the last gate-valid candidate ancestor pending human review.
+- Fail-closed every simulator-source change as effective category `algorithm`, regardless of the proposing agent's label, so renamed or novel training behavior cannot bypass the improvement threshold.
+- Redirected Codex `TEMP`/`TMP` and cooperative disposable work to an evidence-sealed per-cycle scratch directory; the prompt forbids other paths, while documentation explicitly retains the elevated-backend containment limitation.
+- Preserved the immutable v1.1 authorization and added a separate hash-linked v1.2 authorization amendment selected by the launcher.
 
 ## v35
 

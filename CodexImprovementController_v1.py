@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 ALLOWED_CHANGED_FILES = {"tmp_2d_simulator_v37.py", "test_tmp_2d_simulator_v37.py"}
 CODEX_ENV_ALLOWLIST = {
     "APPDATA", "CODEX_HOME", "COMSPEC", "HOME", "LANG", "LC_ALL", "LOCALAPPDATA",
@@ -33,8 +33,6 @@ FORBIDDEN_ADDED_PATTERNS = (
     r"^\+.*\bos\.(?:system|popen|remove|unlink|rmdir)\s*\(",
     r"^\+.*\b(?:shutil\.rmtree|Path\([^)]*\)\.unlink)\s*\(",
 )
-
-
 class ImprovementError(RuntimeError):
     pass
 
@@ -125,6 +123,17 @@ def directory_manifest(root: Path, *, exclude_volatile: bool = False, include_mt
     return dict(sorted(rows.items()))
 
 
+def validate_prior_authorization(repo: Path, record: dict[str, Any]) -> None:
+    relative = Path(str(record.get("prior_authorization_path", "")))
+    if relative.is_absolute() or len(relative.parts) != 1 or relative.name != "approval_codex_improvement_v1.json":
+        raise ImprovementError("Prior improvement authorization path is invalid")
+    prior = repo / relative
+    if not prior.is_file() or prior.is_symlink() or prior.stat().st_size > 64_000:
+        raise ImprovementError("Prior improvement authorization is invalid")
+    if canonical_text_sha256(prior) != record.get("prior_authorization_sha256"):
+        raise ImprovementError("Prior improvement authorization hash mismatch")
+
+
 def load_authorization(config: ControllerConfig) -> tuple[dict[str, Any], str]:
     path = config.authorization
     if path.is_symlink() or path.stat().st_size > 64_000:
@@ -143,6 +152,7 @@ def load_authorization(config: ControllerConfig) -> tuple[dict[str, Any], str]:
     }
     if any(record.get(key) != value for key, value in required.items()):
         raise ImprovementError("Improvement authorization scope mismatch")
+    validate_prior_authorization(config.repo, record)
     try:
         expires = datetime.fromisoformat(str(record["expires_utc"]).replace("Z", "+00:00"))
     except (KeyError, ValueError) as exc:
@@ -249,8 +259,13 @@ def historical_lessons(artifact_root: Path, limit: int = 6) -> list[dict[str, An
     return list(reversed(lessons))
 
 
-def codex_environment() -> tuple[dict[str, str], list[str]]:
+def codex_environment(scratch_dir: Path | None = None) -> tuple[dict[str, str], list[str]]:
     env = {key: value for key, value in os.environ.items() if key.upper() in CODEX_ENV_ALLOWLIST}
+    if scratch_dir is not None:
+        scratch_dir.mkdir(parents=True, exist_ok=True)
+        env["TEMP"] = str(scratch_dir)
+        env["TMP"] = str(scratch_dir)
+        env["CODEX_CANDIDATE_SCRATCH"] = str(scratch_dir)
     secrets = [value for key, value in env.items() if SENSITIVE_ENV_NAME.search(key) and len(value) >= 4]
     return env, secrets
 
@@ -340,7 +355,7 @@ def make_config(argv: Sequence[str] | None = None) -> ControllerConfig:
         cycles=max(1, args.cycles), codex_timeout_seconds=max(60, args.codex_timeout),
         test_timeout_seconds=max(30, args.test_timeout), evaluation_timeout_seconds=max(60, args.evaluation_timeout),
         max_diff_bytes=max(1_000, args.max_diff_bytes), max_runtime_seconds=max(300, args.max_runtime_seconds),
-        authorization=(args.authorization or (args.repo / "approval_codex_improvement_v1.json")).resolve(),
+        authorization=(args.authorization or (args.repo / "approval_codex_improvement_v1_2.json")).resolve(),
         dry_run=bool(args.dry_run),
     )
     if not (config.repo / ".git").exists():
@@ -372,7 +387,7 @@ def candidate_train(config: ControllerConfig, source_root: Path, output_root: Pa
         "--artifact-root", output_root,
         "--source-v36", source_root / "artifacts" / "v36" / "qdppo-evaluation-001" / "evolution_state_v36.npz",
         "--seed-file", source_root / "improvement_dev_seeds_v1.txt",
-        "--parent-authorization", source_root / "approval_codex_improvement_v1.json",
+        "--parent-authorization", source_root / config.authorization.name,
         "--generations", "4", "--max-frames", "64", "--rollout-frames", "64",
         "--max-runtime-seconds", str(min(600, config.evaluation_timeout_seconds)),
     ], source_root, config.evaluation_timeout_seconds)
@@ -412,7 +427,7 @@ def create_worktree(config: ControllerConfig, base_ref: str, branch: str, worktr
 
 
 def prompt_for_cycle(base_score: dict[str, Any], production: dict[str, Any], cycle: int,
-                     prior_cycles: Sequence[dict[str,Any]] = ()) -> str:
+                     prior_cycles: Sequence[dict[str,Any]] = (), scratch_dir: Path | None = None) -> str:
     def bounded(value: Any, limit: int) -> str | None:
         if value is None:
             return None
@@ -438,6 +453,13 @@ def prompt_for_cycle(base_score: dict[str, Any], production: dict[str, Any], cyc
     trusted_score={key:base_score.get(key) for key in (
         "cvar","mean","standard_mean","challenge_mean","early_extinction_rate","policy_hash","score_seed_hash"
     )}
+    scratch_instruction = (
+        f"Write disposable files only under {scratch_dir}. TEMP and TMP point there. "
+        "Do not write to the user profile, Codex memory directory, system TEMP, or any other external path. "
+        "The controller performs trusted training and scoring, so do not run parameter sweeps or duplicate its evaluation."
+        if scratch_dir is not None else
+        "Do not write disposable files outside the controller-provided scratch directory."
+    )
     return f"""You are improving the Blast_Pit v37 training process in an isolated candidate Git worktree.
 
 Mission: make ONE minimal, technically justified improvement to tmp_2d_simulator_v37.py based on the retained production telemetry, and add or update focused tests in test_tmp_2d_simulator_v37.py.
@@ -464,12 +486,13 @@ Hard constraints:
 5. Keep deterministic behavior and checkpoint resume parity.
 6. Run the focused tests and full pytest suite.
 7. If no defensible improvement is possible, make no changes and return category no_change.
-8. Put disposable evaluation artifacts outside the worktree or remove them before finishing; ignored files are still rejected by the raw-filesystem gate.
+8. {scratch_instruction}
 
 Prefer a process/correctness improvement with measurable non-regression. Algorithm changes must be small and explain why the trusted deterministic development score should improve. Your final response must satisfy the supplied JSON schema."""
 
 
-def codex_cycle(config: ControllerConfig, worktree: Path, cycle_dir: Path, prompt: str) -> dict[str, Any]:
+def codex_cycle(config: ControllerConfig, worktree: Path, cycle_dir: Path, prompt: str,
+                scratch_dir: Path | None = None) -> dict[str, Any]:
     schema = worktree / "schemas" / "codex_improvement_result.schema.json"
     final_output = cycle_dir / "codex_final.json"
     args = [
@@ -478,12 +501,13 @@ def codex_cycle(config: ControllerConfig, worktree: Path, cycle_dir: Path, promp
         "-c", 'windows.sandbox="elevated"', "-c", 'approval_policy="never"', "-c", 'model_reasoning_effort="high"', "--output-schema", schema,
         "--output-last-message", final_output, prompt,
     ]
-    env, secrets = codex_environment()
+    env, secrets = codex_environment(scratch_dir)
     atomic_json(cycle_dir / "codex_environment.json", {
         "passed_variable_names": sorted(env),
         "redacted_variable_names": sorted(key for key in env if SENSITIVE_ENV_NAME.search(key)),
         "candidate_network_access": False,
         "codex_api_access": True,
+        "scratch_dir": str(scratch_dir) if scratch_dir is not None else None,
     })
     result = streamed_command(args,worktree,config.codex_timeout_seconds,cycle_dir/"codex_events.jsonl",cycle_dir/"codex_stderr.log",
                               env=env, redactions=secrets)
@@ -562,6 +586,22 @@ def metric_gate(category: str, baseline: dict[str, Any], candidate: dict[str, An
     return not reasons, reasons
 
 
+def classify_candidate_category(declared_category: str, diff: str) -> tuple[str, list[str]]:
+    """Conservatively classify source changes without trusting the proposing agent's label."""
+    declared = declared_category if declared_category in {"algorithm", "correctness", "process", "no_change"} else "algorithm"
+    in_v37_source = False
+    source_changed = False
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            in_v37_source = "a/tmp_2d_simulator_v37.py b/tmp_2d_simulator_v37.py" in line
+            continue
+        if not in_v37_source or line.startswith(("+++", "---")) or not line.startswith(("+", "-")):
+            continue
+        source_changed = True
+    indicators = ["any tmp_2d_simulator_v37.py source change is fail-closed as algorithm"] if source_changed else []
+    return ("algorithm" if source_changed else declared), indicators
+
+
 def commit_candidate(config: ControllerConfig, worktree: Path, cycle: int, cycle_dir: Path) -> str:
     files = sorted(ALLOWED_CHANGED_FILES & set(changed_files(config, worktree)))
     require_success(git(config, ["add", "--", *files], cwd=worktree), "candidate git add")
@@ -629,21 +669,38 @@ def run(config: ControllerConfig) -> int:
         try:
             create_worktree(config, current_ref, branch, worktree, cycle_dir)
             worktree_snapshot(worktree, cycle_dir)
+            scratch_dir = cycle_dir / "codex_scratch"
             record["status"] = "CODEX_RUNNING"; atomic_json(run_dir / "state.json", state)
-            decision = codex_cycle(config, worktree, cycle_dir, prompt_for_cycle(baseline, production, cycle,[*historical_cycles,*state["cycles"][:-1]]))
+            prompt = prompt_for_cycle(
+                baseline, production, cycle, [*historical_cycles, *state["cycles"][:-1]], scratch_dir
+            )
+            decision = codex_cycle(config, worktree, cycle_dir, prompt, scratch_dir)
             record["codex_decision"] = decision
             record["status"] = "SECURITY_VALIDATING"; atomic_json(run_dir / "state.json", state)
-            security_ok, security_reasons, _ = security_gate(config, worktree, cycle_dir)
+            security_ok, security_reasons, diff = security_gate(config, worktree, cycle_dir)
             if not security_ok:
                 record.update({"status": "REJECTED", "reasons": security_reasons, "ended_at": utc_now()})
                 atomic_json(run_dir / "state.json", state); continue
+            declared_category = str(decision.get("category", "algorithm"))
+            effective_category, algorithm_indicators = classify_candidate_category(declared_category, diff)
+            record.update({"declared_category": declared_category, "effective_category": effective_category})
+            atomic_json(cycle_dir / "category_gate.json", {
+                "declared_category": declared_category,
+                "effective_category": effective_category,
+                "forced_algorithm": effective_category == "algorithm" and declared_category != "algorithm",
+                "algorithm_indicators": algorithm_indicators,
+            })
             record["status"] = "TESTING"; atomic_json(run_dir / "state.json", state)
             validation_gate(config, worktree, cycle_dir)
             record["status"] = "EVALUATING"; atomic_json(run_dir / "state.json", state)
             candidate_checkpoint = candidate_train(config, worktree, cycle_dir / "training_artifacts", f"candidate-c{cycle:03d}", cycle_dir)
             candidate = trusted_score(config, candidate_checkpoint, cycle_dir, "candidate")
-            accepted, metric_reasons = metric_gate(str(decision.get("category", "algorithm")), baseline, candidate)
-            atomic_json(cycle_dir / "promotion_gate.json", {"pass": accepted, "baseline": baseline, "candidate": candidate, "reasons": metric_reasons})
+            accepted, metric_reasons = metric_gate(effective_category, baseline, candidate)
+            atomic_json(cycle_dir / "promotion_gate.json", {
+                "pass": accepted, "declared_category": declared_category,
+                "effective_category": effective_category, "baseline": baseline,
+                "candidate": candidate, "reasons": metric_reasons,
+            })
             if not accepted:
                 record.update({"status": "REJECTED", "candidate_score": candidate, "reasons": metric_reasons, "ended_at": utc_now()})
                 atomic_json(run_dir / "state.json", state); continue

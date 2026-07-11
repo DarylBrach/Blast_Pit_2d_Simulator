@@ -25,7 +25,7 @@ $ControllerArgs = @(
     '--codex', $Codex,
     '--cycles', $Cycles.ToString(),
     '--max-runtime-seconds', '28800',
-    '--authorization', (Join-Path $ProjectRoot 'approval_codex_improvement_v1.json')
+    '--authorization', (Join-Path $ProjectRoot 'approval_codex_improvement_v1_2.json')
 )
 if ($DryRun) { $ControllerArgs += '--dry-run' }
 
