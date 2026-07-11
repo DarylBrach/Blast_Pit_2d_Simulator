@@ -7,7 +7,7 @@
   "issued_utc": "2026-07-11T16:00:00Z",
   "expires_utc": "2026-08-11T16:00:00Z",
   "controller_version": "1.1.0",
-  "controller_source_sha256": "99602863827023cd294c6545797f3795d7a35439b971e4195cfd6510174b65ba",
+  "controller_source_sha256": "9d713dd63eef29c6a13a3e3736e810e8a3526a0f5a9094337d4b7d1322f52672",
   "candidate_driver_source_sha256": "687faeaed175fb74596380a8562a0ea6053ead59d3ce3a0d1e81d6a16c4e41f5",
   "score_source_sha256": "c406b80e27b5e7cfd63968f59aeefc891037241e7c804707cf187cf928fbd862",
   "development_seed_sha256": "fc7a21bde5c95519dd48f13588ff33dbb59b1b617d41e8e42542e9cce4a767cf",

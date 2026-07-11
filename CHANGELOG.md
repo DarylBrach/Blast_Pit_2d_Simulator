@@ -5,6 +5,7 @@
 - Added an eight-hour supervisor/authorization ceiling, minimal and redacted Codex environment, raw-filesystem comparison, pre/post production evidence, and recursive SHA-256 evidence sealing.
 - Carried accepted and rejected lessons across multiple completed controller runs, including summaries, risks, scores, and raw-gate failures.
 - Compacted multi-run lessons to decision-relevant metrics and bounded text so Windows can launch Codex reliably.
+- Bounded the combined cross-run and same-run lesson window to the six most recent cycles, preventing Windows command-line overflow late in long controller runs.
 - Validated autonomous correction and retention in controller run `20260711T171731Z`; candidate `47da614` passed 83 tests and trusted metrics while production remained unchanged and the 34-file evidence bundle was sealed.
 
 ## v35

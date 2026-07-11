@@ -132,6 +132,14 @@ def test_prompt_with_six_large_lessons_fits_windows_cmd_limit():
     assert "x"*100 not in prompt
 
 
+def test_prompt_bounds_combined_cross_run_and_same_run_history():
+    prior=[{"status":"REJECTED","codex_decision":{"hypothesis":f"lesson-{index}-"+"h"*1000,"summary":"s"*2000,"risks":["r"*1000]},"reasons":["g"*5000],"candidate_score":{"cvar":.5,"mean":.6}} for index in range(16)]
+    prompt=controller.prompt_for_cycle({"cvar":.5,"mean":.6,"standard_mean":.7,"challenge_mean":.4,"early_extinction_rate":.1},{"generation":99,"challenge_cvar":.6,"workflow_state":"TRAINING_COMPLETE","hof_policy_hash":"abc"},10,prior)
+    assert len(prompt)<6500
+    assert "lesson-10-" in prompt and "lesson-15-" in prompt
+    assert "lesson-9-" not in prompt
+
+
 def test_historical_lessons_span_completed_runs(tmp_path):
     for name,hypothesis in (("20260711T010000Z","older accepted"),("20260711T020000Z","newer rejected")):
         run=tmp_path/name; run.mkdir()

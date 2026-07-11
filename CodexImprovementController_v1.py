@@ -425,7 +425,7 @@ def prompt_for_cycle(base_score: dict[str, Any], production: dict[str, Any], cyc
         return {key: value.get(key) for key in ("cvar", "mean", "standard_mean", "early_extinction_rate")}
 
     lessons=[]
-    for item in prior_cycles:
+    for item in prior_cycles[-6:]:
         decision=item.get("codex_decision",{})
         lessons.append({
             "status":item.get("status"),
