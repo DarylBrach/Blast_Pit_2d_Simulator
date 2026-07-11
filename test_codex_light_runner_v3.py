@@ -5,6 +5,7 @@ import os
 import sys
 import threading
 import time
+from collections import deque
 from pathlib import Path
 
 import pytest
@@ -132,3 +133,13 @@ def test_keyboard_interrupt_terminates_child_tree(monkeypatch, tmp_path):
     with pytest.raises(KeyboardInterrupt):
         runner.run_target_once(cfg, run_dir, 1)
     assert terminated == [fake]
+
+
+def test_stream_reader_survives_console_encoding_mismatch(monkeypatch, tmp_path):
+    console_bytes=io.BytesIO(); console=io.TextIOWrapper(console_bytes,encoding="cp1252",errors="strict")
+    monkeypatch.setattr(runner.sys,"stdout",console)
+    runner.stream_reader(io.BytesIO("unicode: Ω\n".encode()),tmp_path/"stdout.log",tmp_path/"combined.log","stdout",
+                         deque(maxlen=10),runner.ActivityClock(),runner.threading.Lock(),False)
+    console.flush()
+    assert b"unicode:" in console_bytes.getvalue()
+    assert (tmp_path/"stdout.log").read_bytes()=="unicode: Ω\n".encode()

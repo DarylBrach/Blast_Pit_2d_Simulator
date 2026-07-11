@@ -533,7 +533,12 @@ def stream_reader(
                     for line in raw.splitlines(keepends=True):
                         combined_file.write(prefix + line)
             if not quiet:
-                print(text, end="", file=output, flush=True)
+                try:
+                    print(text, end="", file=output, flush=True)
+                except UnicodeEncodeError:
+                    encoding = getattr(output, "encoding", None) or "utf-8"
+                    safe = text.encode(encoding, errors="backslashreplace").decode(encoding)
+                    print(safe, end="", file=output, flush=True)
 
 
 def git_metadata(cwd: Path) -> dict[str, Any]:
