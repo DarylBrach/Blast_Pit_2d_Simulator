@@ -24,7 +24,7 @@ The user's 2026-07-11 authorization permits disposable development evaluation. E
 - The candidate is trained with development-only seeds and a small deterministic fixture.
 - The checkpoint is scored by the unchanged trusted evaluator from `main` on a separate deterministic development suite.
 - Process/correctness changes must remain within non-regression limits. Algorithm changes must also improve CVaR or mean fitness by at least 0.005.
-- Rejected-cycle hypotheses, scores, and exact gate failures are injected into later-cycle prompts so the autonomous loop must correct prior regressions instead of blindly repeating them.
+- Rejected-cycle hypotheses, scores, and exact gate failures from both the current run and the latest completed run are injected into later prompts so the autonomous loop must correct prior regressions instead of blindly repeating them.
 - Accepted changes are committed only to the candidate branch. Promotion to `main` remains human-reviewed.
 
 These controls make the loop autonomous in proposing, testing, evaluating, and retaining candidates. They do not make it an operating-system sandbox or grant production authority.

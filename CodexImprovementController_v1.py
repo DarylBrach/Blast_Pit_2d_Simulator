@@ -361,9 +361,13 @@ def run(config: ControllerConfig) -> int:
     rid = run_id()
     run_dir = config.artifact_root / rid
     run_dir.mkdir(parents=True, exist_ok=False)
+    previous_state_path=config.artifact_root/"latest.json"
+    previous_state=json.loads(previous_state_path.read_text(encoding="utf-8")) if previous_state_path.is_file() else {}
+    historical_cycles=list(previous_state.get("cycles",[]))[-3:]
     state: dict[str, Any] = {"schema_version": "blast-pit.improvement-controller.v1", "version": VERSION, "run_id": rid,
                              "status": "BASELINE_EVALUATING", "started_at": utc_now(), "base_commit": base_commit,
-                             "cycles_requested": config.cycles, "cycles": [], "final_candidate_commit": None}
+                             "cycles_requested": config.cycles, "cycles": [], "prior_run_id":previous_state.get("run_id"),
+                             "historical_lessons_loaded":len(historical_cycles),"final_candidate_commit": None}
     atomic_json(run_dir / "state.json", state)
     production = production_status(config)
     baseline = baseline_score(config, run_dir)
@@ -389,7 +393,7 @@ def run(config: ControllerConfig) -> int:
         try:
             create_worktree(config, current_ref, branch, worktree, cycle_dir)
             record["status"] = "CODEX_RUNNING"; atomic_json(run_dir / "state.json", state)
-            decision = codex_cycle(config, worktree, cycle_dir, prompt_for_cycle(baseline, production, cycle,state["cycles"][:-1]))
+            decision = codex_cycle(config, worktree, cycle_dir, prompt_for_cycle(baseline, production, cycle,[*historical_cycles,*state["cycles"][:-1]]))
             record["codex_decision"] = decision
             record["status"] = "SECURITY_VALIDATING"; atomic_json(run_dir / "state.json", state)
             security_ok, security_reasons, _ = security_gate(config, worktree, cycle_dir)
