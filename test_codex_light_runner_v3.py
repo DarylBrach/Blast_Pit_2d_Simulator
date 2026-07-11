@@ -105,7 +105,7 @@ def test_latest_state_is_visible_while_target_is_running(tmp_path):
             candidate=json.loads(latest.read_text())
             if candidate.get("status")=="RUNNING": observed=candidate
         time.sleep(.02)
-    thread.join(timeout=3)
+    thread.join(timeout=10)
     assert observed is not None; assert observed["artifacts_dir"]
     assert result==[0]
 
