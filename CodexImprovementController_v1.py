@@ -38,6 +38,7 @@ class ControllerConfig:
     codex: Path
     artifact_root: Path
     worktree_root: Path
+    model: str
     cycles: int
     codex_timeout_seconds: int
     test_timeout_seconds: int
@@ -105,6 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--codex", type=Path, default=Path(os.environ.get("APPDATA", "")) / "npm" / "codex.cmd")
     parser.add_argument("--artifact-root", type=Path, default=Path.home() / ".codex_light_runner" / "improvements" / "Blast_Pit_2d_Simulator")
     parser.add_argument("--worktree-root", type=Path, default=Path.home() / ".codex_light_runner" / "improvement_worktrees" / "Blast_Pit_2d_Simulator")
+    parser.add_argument("--model", default="gpt-5.5")
     parser.add_argument("--cycles", type=int, default=1)
     parser.add_argument("--codex-timeout", type=int, default=1800)
     parser.add_argument("--test-timeout", type=int, default=300)
@@ -118,7 +120,7 @@ def make_config(argv: Sequence[str] | None = None) -> ControllerConfig:
     args = build_parser().parse_args(argv)
     config = ControllerConfig(
         repo=args.repo.resolve(), python=args.python.resolve(), codex=args.codex.resolve(),
-        artifact_root=args.artifact_root.resolve(), worktree_root=args.worktree_root.resolve(),
+        artifact_root=args.artifact_root.resolve(), worktree_root=args.worktree_root.resolve(), model=str(args.model),
         cycles=max(1, args.cycles), codex_timeout_seconds=max(60, args.codex_timeout),
         test_timeout_seconds=max(30, args.test_timeout), evaluation_timeout_seconds=max(60, args.evaluation_timeout),
         max_diff_bytes=max(1_000, args.max_diff_bytes), dry_run=bool(args.dry_run),
@@ -219,9 +221,9 @@ def codex_cycle(config: ControllerConfig, worktree: Path, cycle_dir: Path, promp
     schema = worktree / "schemas" / "codex_improvement_result.schema.json"
     final_output = cycle_dir / "codex_final.json"
     args = [
-        config.codex, "exec", "--cd", worktree, "--sandbox", "workspace-write",
+        config.codex, "exec", "--cd", worktree, "--sandbox", "workspace-write", "--model", config.model,
         "--ephemeral", "--ignore-user-config", "--json",
-        "-c", 'approval_policy="never"', "--output-schema", schema,
+        "-c", 'approval_policy="never"', "-c", 'model_reasoning_effort="high"', "--output-schema", schema,
         "--output-last-message", final_output, prompt,
     ]
     result = command(config, args, worktree, config.codex_timeout_seconds, env=os.environ.copy())

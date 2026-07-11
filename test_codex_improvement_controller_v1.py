@@ -34,6 +34,7 @@ def config(repo: Path, tmp_path: Path) -> controller.ControllerConfig:
         codex=Path(sys.executable),
         artifact_root=tmp_path / "evidence",
         worktree_root=tmp_path / "worktrees",
+        model="gpt-5.5",
         cycles=1,
         codex_timeout_seconds=60,
         test_timeout_seconds=60,
