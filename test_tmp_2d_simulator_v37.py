@@ -64,6 +64,12 @@ class CriticTests(unittest.TestCase):
 
 
 class ArtifactTests(unittest.TestCase):
+    def test_source_hash_is_line_ending_independent(self):
+        with tempfile.TemporaryDirectory() as folder:
+            lf=Path(folder)/"lf.py"; crlf=Path(folder)/"crlf.py"
+            lf.write_bytes(b"print('a')\nprint('b')\n"); crlf.write_bytes(b"print('a')\r\nprint('b')\r\n")
+            self.assertEqual(v37.canonical_source_sha256(lf),v37.canonical_source_sha256(crlf))
+
     def test_eight_hour_seed_suite_and_approval_are_exactly_scoped(self):
         import json
         seeds=[int(x) for x in Path("audit_seeds_v37_8h_001_committed.txt").read_text().splitlines()]

@@ -19,6 +19,6 @@
 - Fresh and checkpoint-resume routes preserve one approved total generation ceiling.
 - `BUDGET_EXHAUSTED` is resumable but not audit-eligible; only `TRAINING_COMPLETE` may advance to terminal audit.
 - Fresh approval and 64-seed commitment are bound to `robustness-v37-8h-001`, the frozen source/checkpoint, 100-generation ceiling, and 28,200-second graceful runtime.
-- Python compilation, PowerShell AST parsing, approval validation, and the expanded 58-test repository suite passed on 2026-07-11.
+- Python compilation, PowerShell AST parsing, approval validation, and the expanded repository suite passed locally and in GitHub Actions on 2026-07-11; the source identity is line-ending canonical across checkouts.
 - A clean-commit supervised dry run remains the final pre-execution check; no eight-hour workload was started during implementation.
 - No eight-hour result, improvement, audit pass, or release is claimed by documentation implementation.

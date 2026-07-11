@@ -42,6 +42,12 @@ def file_evidence(path: Path) -> dict[str, object]:
     return {"path": str(path.resolve()), "bytes": path.stat().st_size, "sha256": digest}
 
 
+def canonical_source_sha256(path: Path) -> str:
+    """Hash text source independent of Git/Windows line-ending conversion."""
+    data=path.read_bytes().replace(b"\r\n",b"\n").replace(b"\r",b"\n")
+    return hashlib.sha256(data).hexdigest()
+
+
 def stable_seed(master: int, *parts: object) -> int:
     return v35.stable_seed(master, APP_VERSION, *parts)
 
@@ -361,7 +367,7 @@ def runtime_allows_generation(started: float,max_runtime_seconds: int,runtime_gr
 
 
 def experiment_fingerprint(source: Path, simulation, ppo, robustness, audit_seed_file: Path):
-    return sha256_json({"app":APP_VERSION,"algorithm":ALGORITHM,"critic_schema":CRITIC_SCHEMA,"simulation":asdict(simulation),"ppo":asdict(ppo),"robustness":asdict(robustness),"v36_checkpoint":file_evidence(source)["sha256"],"audit_seed_commitment":file_evidence(audit_seed_file)["sha256"],"v37_source":hashlib.sha256(Path(__file__).read_bytes()).hexdigest()})
+    return sha256_json({"app":APP_VERSION,"algorithm":ALGORITHM,"critic_schema":CRITIC_SCHEMA,"simulation":asdict(simulation),"ppo":asdict(ppo),"robustness":asdict(robustness),"v36_checkpoint":file_evidence(source)["sha256"],"audit_seed_commitment":file_evidence(audit_seed_file)["sha256"],"v37_source":canonical_source_sha256(Path(__file__))})
 
 
 def load_approval(path: Path,experiment_id: str,fingerprint: str,action: str,*,source: Path|None=None,audit_seed_file: Path|None=None,
@@ -376,7 +382,7 @@ def load_approval(path: Path,experiment_id: str,fingerprint: str,action: str,*,s
     expected={
         "source_v36_checkpoint_sha256": file_evidence(source)["sha256"] if source else None,
         "audit_seed_commitment_sha256": file_evidence(audit_seed_file)["sha256"] if audit_seed_file else None,
-        "v37_source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "v37_source_sha256": canonical_source_sha256(Path(__file__)),
         "approved_total_generations": planned_generations,
         "approved_max_runtime_seconds": max_runtime_seconds,
     }
