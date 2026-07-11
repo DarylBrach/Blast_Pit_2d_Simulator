@@ -73,6 +73,12 @@ Remove a stale stop file only after reviewing the retained runner and controller
 
 The controller's `latest.json` records the final candidate commit, worktree, authorization hash, and evidence-manifest hash. Review the patch, tests, deterministic score, risks, raw-filesystem gate, production guard, manifest, and Git branch. A human may then open a pull request or reject the branch. Any production experiment after a source change requires a new experiment ID, seed commitment, fingerprint, and approval; historical approval must never be rewritten.
 
+## Operational validation: 2026-07-11
+
+Controller v1.1 completed supervised run `20260711T171731Z` from clean main commit `0ad47fb`. It loaded six cross-run lessons, corrected a prior ignored-artifact rejection, passed the Git and raw-filesystem two-file gates, passed 83 candidate tests, and retained local candidate commit `47da614` without changing main or the completed production experiment. Trusted 32-seed screening improved CVaR from 0.269109 to 0.380316, mean from 0.424988 to 0.452221, standard mean from 0.494482 to 0.497590, and early extinction from 0.03125 to 0. The 34-file controller evidence manifest revalidated with SHA-256 `83ae131cdd8a333bacfb785d73fb5243ecb6b7c4481a31aff208b2661144fea4`.
+
+This validates autonomous propose, edit, test, evaluate, learn, clean up, and retain behavior. It does not promote the candidate: the branch remains local, terminal audit was not run, and a source-changed production experiment still requires new human approval and lineage evidence.
+
 ## Limitations
 
 - Development scores are deterministic screening evidence, not a terminal audit or proof of general superiority.

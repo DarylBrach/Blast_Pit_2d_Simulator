@@ -48,4 +48,6 @@ The robustness-focused v37 experiment is documented in [README_v37.md](README_v3
 
 The governed Codex improvement controller is documented in [docs/CODEX_IMPROVEMENT_LOOP.md](docs/CODEX_IMPROVEMENT_LOOP.md). It proposes and evaluates changes only in isolated candidate worktrees under an expiring, hash-bound human authorization; it retains sealed evidence and never modifies, merges, pushes, or releases `main` automatically. Use `run_codex_improvement_monitor.bat`, not the PowerShell file directly, on execution-policy-restricted Windows systems.
 
+The supervised v1.1 validation retained candidate `47da614` after 83 tests and trusted metric gates while proving main and the completed production artifacts unchanged. The candidate is development-screening evidence only and remains unmerged.
+
 The governed v37 eight-hour operator workflow is [docs/V37_OPERATIONS.md](docs/V37_OPERATIONS.md). Use `run_v37_8h.ps1 -DryRun` first. The launcher is deliberately approval-gated and will not reuse an older experiment's authorization.
