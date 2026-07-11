@@ -45,22 +45,22 @@ def config(repo: Path, tmp_path: Path) -> controller.ControllerConfig:
 
 
 def test_metric_gate_allows_process_non_regression():
-    baseline = {"cvar": 0.5, "mean": 0.6, "early_extinction_rate": 0.1}
-    candidate = {"cvar": 0.495, "mean": 0.598, "early_extinction_rate": 0.1}
+    baseline = {"cvar": 0.5, "mean": 0.6, "standard_mean": 0.7, "early_extinction_rate": 0.1}
+    candidate = {"cvar": 0.495, "mean": 0.598, "standard_mean": 0.7, "early_extinction_rate": 0.1}
     assert controller.metric_gate("process", baseline, candidate) == (True, [])
 
 
 def test_metric_gate_requires_algorithm_improvement():
-    baseline = {"cvar": 0.5, "mean": 0.6, "early_extinction_rate": 0.1}
-    candidate = {"cvar": 0.501, "mean": 0.601, "early_extinction_rate": 0.1}
+    baseline = {"cvar": 0.5, "mean": 0.6, "standard_mean": 0.7, "early_extinction_rate": 0.1}
+    candidate = {"cvar": 0.501, "mean": 0.601, "standard_mean": 0.7, "early_extinction_rate": 0.1}
     passed, reasons = controller.metric_gate("algorithm", baseline, candidate)
     assert not passed
     assert "lacks required" in reasons[0]
 
 
 def test_metric_gate_rejects_extinction_regression():
-    baseline = {"cvar": 0.5, "mean": 0.6, "early_extinction_rate": 0.1}
-    candidate = {"cvar": 0.6, "mean": 0.7, "early_extinction_rate": 0.13}
+    baseline = {"cvar": 0.5, "mean": 0.6, "standard_mean": 0.7, "early_extinction_rate": 0.1}
+    candidate = {"cvar": 0.6, "mean": 0.7, "standard_mean": 0.7, "early_extinction_rate": 0.13}
     passed, reasons = controller.metric_gate("process", baseline, candidate)
     assert not passed
     assert any("extinction" in reason for reason in reasons)
@@ -109,6 +109,21 @@ def test_prompt_contains_production_evidence_and_constraints():
     assert "completed generations: 100" in prompt
     assert "Modify only" in prompt
     assert "terminal audit" in prompt
+
+
+def test_prompt_carries_rejection_lessons():
+    prior={"cycle":1,"status":"REJECTED","codex_decision":{"hypothesis":"mutate all actors"},"reasons":["mean regression"],"candidate_score":{"mean":.4}}
+    prompt=controller.prompt_for_cycle({"cvar":.5},{"generation":99,"challenge_cvar":.6,"workflow_state":"TRAINING_COMPLETE","hof_policy_hash":"abc"},2,[prior])
+    assert "mutate all actors" in prompt
+    assert "mean regression" in prompt
+    assert "do not repeat" in prompt
+
+
+def test_metric_gate_checks_standard_profile_regression():
+    baseline={"cvar":.5,"mean":.6,"standard_mean":.7,"early_extinction_rate":.1}
+    candidate={"cvar":.6,"mean":.6,"standard_mean":.65,"early_extinction_rate":.1}
+    passed,reasons=controller.metric_gate("process",baseline,candidate)
+    assert not passed and any("standard-profile" in reason for reason in reasons)
 
 
 def test_atomic_json_replaces_complete_document(tmp_path):

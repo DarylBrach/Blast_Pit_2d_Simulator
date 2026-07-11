@@ -224,7 +224,10 @@ def create_worktree(config: ControllerConfig, base_ref: str, branch: str, worktr
     require_success(result, "git worktree add")
 
 
-def prompt_for_cycle(base_score: dict[str, Any], production: dict[str, Any], cycle: int) -> str:
+def prompt_for_cycle(base_score: dict[str, Any], production: dict[str, Any], cycle: int,
+                     prior_cycles: Sequence[dict[str,Any]] = ()) -> str:
+    lessons=[{"cycle":item.get("cycle"),"status":item.get("status"),"hypothesis":item.get("codex_decision",{}).get("hypothesis"),
+              "reasons":item.get("reasons",[]),"candidate_score":item.get("candidate_score")} for item in prior_cycles]
     return f"""You are improving the Blast_Pit v37 training process in an isolated candidate Git worktree.
 
 Mission: make ONE minimal, technically justified improvement to tmp_2d_simulator_v37.py based on the retained production telemetry, and add or update focused tests in test_tmp_2d_simulator_v37.py.
@@ -239,6 +242,9 @@ Trusted development baseline:
 {json.dumps(base_score, sort_keys=True)}
 
 Cycle: {cycle}
+
+Prior cycle lessons (do not repeat a rejected approach without directly correcting its failed gates):
+{json.dumps(lessons, sort_keys=True)}
 
 Hard constraints:
 1. Modify only tmp_2d_simulator_v37.py and test_tmp_2d_simulator_v37.py.
@@ -322,6 +328,8 @@ def metric_gate(category: str, baseline: dict[str, Any], candidate: dict[str, An
         reasons.append("CVaR regression exceeds 0.01")
     if float(candidate["mean"]) < float(baseline["mean"]) * 0.99:
         reasons.append("mean fitness regression exceeds 1 percent")
+    if float(candidate["standard_mean"]) < float(baseline["standard_mean"]) * 0.95:
+        reasons.append("standard-profile mean regression exceeds 5 percent")
     if float(candidate["early_extinction_rate"]) > float(baseline["early_extinction_rate"]) + 0.02:
         reasons.append("early extinction regression exceeds 0.02")
     if category == "algorithm" and not (
@@ -381,7 +389,7 @@ def run(config: ControllerConfig) -> int:
         try:
             create_worktree(config, current_ref, branch, worktree, cycle_dir)
             record["status"] = "CODEX_RUNNING"; atomic_json(run_dir / "state.json", state)
-            decision = codex_cycle(config, worktree, cycle_dir, prompt_for_cycle(baseline, production, cycle))
+            decision = codex_cycle(config, worktree, cycle_dir, prompt_for_cycle(baseline, production, cycle,state["cycles"][:-1]))
             record["codex_decision"] = decision
             record["status"] = "SECURITY_VALIDATING"; atomic_json(run_dir / "state.json", state)
             security_ok, security_reasons, _ = security_gate(config, worktree, cycle_dir)
