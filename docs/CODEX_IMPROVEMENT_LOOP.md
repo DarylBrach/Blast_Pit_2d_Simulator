@@ -25,7 +25,7 @@ The retained `approval_codex_improvement_v1.json` records the user's 2026-07-11 
 - The checkpoint is scored by the unchanged trusted evaluator from `main` on a separate deterministic development suite.
 - Codex receives a minimal environment allowlist; retained event streams redact passed secret values and bearer credentials. The Codex API is the only authorized network exception, while candidate simulator code remains network-denied.
 - Pre/post evidence records main HEAD, Git tree, worktree status, and SHA-256/size/mtime inventory for the retained production experiment. `production_modified` is derived from this comparison rather than asserted.
-- Each completed controller bundle is sealed by `evidence_manifest.json`, which hashes every retained evidence file as a set.
+- Each completed controller bundle is sealed by `evidence_manifest.json`, which hashes every retained evidence file except the manifest itself to avoid self-reference.
 - Process/correctness changes must remain within non-regression limits. Algorithm changes must also improve CVaR or mean fitness by at least 0.005.
 - Accepted and rejected hypotheses, summaries, risks, decision-relevant score metrics, and gate failures from up to six cycles across completed runs are compacted into later prompts so the autonomous loop retains successful lessons and corrects prior regressions without exceeding Windows command-line limits. Ignored disposable files are included in the raw-filesystem gate and must be written outside the worktree or removed before the agent finishes.
 - Accepted changes are committed only to the candidate branch. Promotion to `main` remains human-reviewed.
