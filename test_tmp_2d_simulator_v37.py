@@ -86,6 +86,49 @@ class ArtifactTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"source_v36_checkpoint_sha256 mismatch"):
                 v37.load_approval(path,"robustness-v37-8h-001",fingerprint,"train",source=source,audit_seed_file=seed,planned_generations=100,max_runtime_seconds=28200)
 
+    def test_approval_requires_exact_fields_and_resume_action(self):
+        import json
+        source=Path("artifacts/v36/qdppo-evaluation-001/evolution_state_v36.npz"); seed=Path("audit_seeds_v37_8h_001_committed.txt")
+        simulation=v37.v35.SimulationConfig(generations=100,population_size=8,elite_count=2,child_count=5,immigrant_count=1,trials=2,challenge_trials=3,validation_trials=5,max_frames=1000)
+        fingerprint=v37.experiment_fingerprint(source,simulation,v37.v36.PPOConfig(rollout_frames=256,update_epochs=2,minibatch_size=64),v37.RobustnessConfig(audit_trials=64),seed)
+        original=json.loads(Path("approval_v37_8h_001.json").read_text())
+        for mutation in (lambda row:row.pop("approved_total_generations"),lambda row:row["authorized_actions"].remove("resume")):
+            record=json.loads(json.dumps(original)); mutation(record)
+            with tempfile.TemporaryDirectory() as folder:
+                path=Path(folder)/"approval.json"; path.write_text(json.dumps(record))
+                with self.assertRaises(ValueError):
+                    v37.load_approval(path,"robustness-v37-8h-001",fingerprint,"resume",source=source,audit_seed_file=seed,planned_generations=100,max_runtime_seconds=28200)
+
+    def test_status_reports_terminal_state_and_rejects_tamper(self):
+        import json, shutil
+        source=Path("artifacts/v37/robustness-v37-002/evolution_state_v37.npz"); metadata,_,_=v37.load_hof(source)
+        with tempfile.TemporaryDirectory() as folder:
+            checkpoint=Path(folder)/"evolution_state_v37.npz"; shutil.copy2(source,checkpoint)
+            status={"workflow_state":"TRAINING_COMPLETE","audit_eligible":True,"generation":metadata["generation"],
+                    "fingerprint":metadata["fingerprint"],"record_hash":metadata["record_hash"]}
+            checkpoint.with_name("status_v37.json").write_text(json.dumps(status))
+            result=v37.report_status(checkpoint)
+            self.assertTrue(result["audit_eligible"]); self.assertEqual(result["remaining_generations"],0); self.assertEqual(result["next_action"],"audit")
+            status["record_hash"]="0"*64; checkpoint.with_name("status_v37.json").write_text(json.dumps(status))
+            with self.assertRaisesRegex(ValueError,"record_hash mismatch"): v37.report_status(checkpoint)
+
+    def test_budget_stop_resume_matches_uninterrupted_training(self):
+        from argparse import Namespace
+        source=Path("artifacts/v36/qdppo-evaluation-001/evolution_state_v36.npz")
+        seed=Path("audit_seeds_v37_8h_001_committed.txt")
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder); common=dict(experiment_id="parity",source_v36=source,audit_seed_file=seed,approval_record=Path("unused.json"),
+                generations=2,population=8,rollout_frames=16,max_frames=2,audit_trials=64,seed=20260711,max_runtime_seconds=100,runtime_grace_seconds=1)
+            split=Namespace(**common,artifact_root=root/"split",resume=None)
+            with patch.object(v37,"load_approval",return_value="a"*64),patch.object(v37,"runtime_allows_generation",side_effect=[True,False]): self.assertEqual(v37.train(split),0)
+            checkpoint=root/"split"/"parity"/"evolution_state_v37.npz"; self.assertEqual(v37.report_status(checkpoint)["workflow_state"],"BUDGET_EXHAUSTED")
+            split.resume=checkpoint
+            with patch.object(v37,"load_approval",return_value="a"*64),patch.object(v37,"runtime_allows_generation",return_value=True): self.assertEqual(v37.train(split),0)
+            uninterrupted=Namespace(**common,artifact_root=root/"full",resume=None)
+            with patch.object(v37,"load_approval",return_value="a"*64),patch.object(v37,"runtime_allows_generation",return_value=True): self.assertEqual(v37.train(uninterrupted),0)
+            resumed=v37.report_status(checkpoint); full=v37.report_status(root/"full"/"parity"/"evolution_state_v37.npz")
+            self.assertEqual(resumed["record_hash"],full["record_hash"]); self.assertEqual(resumed["hof_policy_hash"],full["hof_policy_hash"])
+
     def test_approval_is_scoped_and_unsigned(self):
         import json
         record=json.loads(Path("approval_v37.json").read_text())

@@ -2,7 +2,7 @@
 
 `approval_v37_002.json` is the corrected lineage's unsigned, scoped local human authorization. It does not authorize release or override empirical gates. `audit_seeds_v37_002_committed.txt` contains 64 fresh externally generated unique seeds bound into the corrected fingerprint before training. The original approval/seeds remain consumed evidence for `-001`.
 
-The approval's declared `issued_utc` was future-dated by drafting error. Direct user authorization and filesystem ordering establish that the file existed before training; `approval_timing_clarification_v37.json` records this without rewriting retained approval evidence.
+The approval's declared `issued_utc` was future-dated by drafting error. Direct user authorization and filesystem ordering establish that the file existed before training; `artifacts/v37/robustness-v37-002/approval_timing_clarification_v37.json` records this without rewriting retained approval evidence.
 
 The terminal audit evaluates v35, v36, and v37 actors on the identical ordered seed/profile suite, balanced 32 standard and 32 challenge. It records per-seed components and hydration/fire/recovery metrics, aggregate mean/median/minimum/CVaR/extinction, and paired bootstrap confidence intervals.
 
@@ -12,4 +12,4 @@ Specialist policies and the v36 positive-delta HoF are retained under `robustnes
 
 For `robustness-v37-8h-001`, the launcher adds a separate operator evidence layer: clean Git commit/remote, Python version, dependency freeze, approval/seed/source/runner hashes, selected fresh-or-resume mode, effective command, runner state, logs, and termination reason. The evidence root is `run_evidence/robustness-v37-8h-001`; it complements rather than replaces simulator checkpoint and hash-chain validation.
 
-The eight-hour approval and audit commitment are intentionally absent from the repository until independently produced and reviewed. An older approval is not evidence for the new lineage. Seal completed evidence with a recursive SHA-256 manifest after all writers exit; disclose any later worktree dirtiness rather than rewriting retained evidence.
+`approval_v37_8h_001.json` and `audit_seeds_v37_8h_001_committed.txt` are the reviewed inputs for the new lineage. They bind the human-owner authorization, frozen implementation and baseline, 100-generation ceiling, runtime boundary, and fresh 64-seed commitment. An older approval is not evidence for this lineage. Seal completed evidence with a recursive SHA-256 manifest after all writers exit; disclose any later worktree dirtiness rather than rewriting retained evidence.

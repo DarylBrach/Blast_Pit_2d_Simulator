@@ -3,6 +3,8 @@ import io
 import json
 import os
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -89,6 +91,23 @@ def test_run_writes_metadata_atomic_state_and_verifiable_manifest(tmp_path):
     for entry in manifest["files"]:
         data = (run_dir / entry["path"]).read_bytes()
         assert hashlib.sha256(data).hexdigest() == entry["sha256"]
+
+
+def test_latest_state_is_visible_while_target_is_running(tmp_path):
+    path=target(tmp_path,"import time\ntime.sleep(1)\n")
+    cfg=runner.make_config(["--cwd",str(tmp_path),"--artifacts",str(tmp_path/"evidence"),"--python",sys.executable,"--no-preflight",str(path)])
+    assert cfg is not None
+    result=[]; thread=threading.Thread(target=lambda:result.append(runner.run(cfg))); thread.start()
+    latest=tmp_path/"evidence"/"latest"/"target_state.json"; observed=None
+    deadline=time.monotonic()+2
+    while time.monotonic()<deadline and observed is None:
+        if latest.is_file():
+            candidate=json.loads(latest.read_text())
+            if candidate.get("status")=="RUNNING": observed=candidate
+        time.sleep(.02)
+    thread.join(timeout=3)
+    assert observed is not None; assert observed["artifacts_dir"]
+    assert result==[0]
 
 
 def test_keyboard_interrupt_terminates_child_tree(monkeypatch, tmp_path):

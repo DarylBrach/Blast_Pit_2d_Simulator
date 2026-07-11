@@ -381,7 +381,7 @@ def load_approval(path: Path,experiment_id: str,fingerprint: str,action: str,*,s
         "approved_max_runtime_seconds": max_runtime_seconds,
     }
     for key,value in expected.items():
-        if value is not None and key in record and record[key]!=value: raise ValueError(f"v37 approval {key} mismatch")
+        if value is not None and record.get(key)!=value: raise ValueError(f"v37 approval {key} mismatch")
     return sha256_json(record)
 
 
@@ -392,7 +392,8 @@ def train(args) -> int:
     estimated=args.generations*args.population*(args.rollout_frames+5*args.max_frames)+args.generations*15*args.max_frames
     if estimated>MAX_FRAMES_BUDGET: raise ValueError("v37 training exceeds frame budget")
     fingerprint=experiment_fingerprint(args.source_v36,simulation,ppo,robust,args.audit_seed_file)
-    approval_digest=load_approval(args.approval_record,args.experiment_id,fingerprint,"train",source=args.source_v36,audit_seed_file=args.audit_seed_file,
+    approval_action="resume" if args.resume else "train"
+    approval_digest=load_approval(args.approval_record,args.experiment_id,fingerprint,approval_action,source=args.source_v36,audit_seed_file=args.audit_seed_file,
                                   planned_generations=args.generations,max_runtime_seconds=args.max_runtime_seconds)
     if not args.experiment_id.replace("-","").replace("_","").isalnum(): raise ValueError("invalid v37 experiment ID")
     base=args.artifact_root/args.experiment_id
@@ -462,6 +463,23 @@ def aggregate(trials,alpha):
     return {"mean":float(np.mean(scores)),"median":median(scores),"minimum":min(scores),"cvar":float(np.mean(sorted(scores)[:count])),"early_extinction_rate":float(np.mean([bool(t.metrics["early_extinction"]) for t in trials])),"challenge_mean":float(np.mean([t.fitness for t in trials if t.profile=="water_fire_challenge"])),"standard_mean":float(np.mean([t.fitness for t in trials if t.profile=="standard"]))}
 
 
+def report_status(checkpoint: Path) -> dict[str,object]:
+    metadata,policy,_=load_hof(checkpoint)
+    generation=int(metadata["generation"]); planned=int(metadata.get("planned_generations",generation+1))
+    status_path=checkpoint.with_name("status_v37.json")
+    status=json.loads(status_path.read_text(encoding="utf-8")) if status_path.is_file() else {}
+    for key,expected in (("generation",generation),("fingerprint",metadata["fingerprint"]),("record_hash",metadata["record_hash"])):
+        if key in status and status[key]!=expected: raise ValueError(f"v37 status {key} mismatch")
+    completed=generation+1; remaining=max(0,planned-completed)
+    workflow=str(status.get("workflow_state",metadata["workflow_state"]))
+    audit_eligible=bool(status.get("audit_eligible",completed==planned))
+    if audit_eligible and (completed!=planned or workflow not in {"TRAINING_COMPLETE","TRAINING_COMMITTED"}): raise ValueError("v37 status audit eligibility mismatch")
+    next_action="audit" if audit_eligible else ("resume" if workflow=="BUDGET_EXHAUSTED" else "inspect")
+    return {"workflow_state":workflow,"audit_eligible":audit_eligible,"generation":generation,"completed_generations":completed,
+            "planned_generations":planned,"remaining_generations":remaining,"next_action":next_action,"hof_policy_hash":policy.policy_hash,
+            "critic_schema":metadata["critic_schema"],"robustness":metadata["robustness"],"fingerprint":metadata["fingerprint"],"record_hash":metadata["record_hash"]}
+
+
 def bootstrap_ci(deltas,seed):
     rng=np.random.default_rng(seed); values=np.asarray(deltas); means=np.asarray([np.mean(rng.choice(values,len(values),replace=True)) for _ in range(2000)])
     return [float(np.quantile(means,.025)),float(np.quantile(means,.975))]
@@ -513,8 +531,7 @@ def main(argv=None):
     args=build_parser().parse_args(argv)
     try:
         if args.command=="train": return train(args)
-        if args.command=="status":
-            metadata,policy,_=load_hof(args.checkpoint); print(canonical_json({"workflow_state":metadata["workflow_state"],"generation":metadata["generation"],"hof_policy_hash":policy.policy_hash,"critic_schema":metadata["critic_schema"],"robustness":metadata["robustness"]})); return 0
+        if args.command=="status": print(canonical_json(report_status(args.checkpoint))); return 0
         if args.command=="audit": return audit(args)
     except (ValueError,OSError,KeyError,json.JSONDecodeError) as error:
         print(f"error: {error}",file=sys.stderr); return 3

@@ -704,9 +704,11 @@ def run_target_once(config: RunnerConfig, run_dir: Path, attempt_number: int) ->
                 break
 
             if elapsed - last_heartbeat >= 30:
-                write_json(attempt_dir / "heartbeat.json", {"status": "RUNNING", "pid": proc.pid,
-                           "updated_at": iso_now(), "elapsed_seconds": round(elapsed, 2),
-                           "idle_seconds": round(activity.idle_seconds(), 2)})
+                heartbeat={"status":"RUNNING","run_id":run_dir.name,"attempt":attempt_number,"pid":proc.pid,
+                           "updated_at":iso_now(),"elapsed_seconds":round(elapsed,2),"idle_seconds":round(activity.idle_seconds(),2),
+                           "artifacts_dir":str(run_dir),"heartbeat":str(attempt_dir/"heartbeat.json")}
+                write_json(attempt_dir / "heartbeat.json",heartbeat)
+                write_json(config.artifacts_root / "latest" / f"{config.name}_state.json",heartbeat)
                 last_heartbeat = elapsed
             time.sleep(0.5)
     except KeyboardInterrupt:
@@ -1016,8 +1018,9 @@ def run(config: RunnerConfig) -> int:
                 "execution_metadata": metadata,
             },
         )
-        write_json(run_dir / "running_state.json", {"status": "RUNNING", "run_id": rid,
-                   "pid": os.getpid(), "started_at": started_at})
+        running_state={"status":"RUNNING","run_id":rid,"pid":os.getpid(),"started_at":started_at,"artifacts_dir":str(run_dir)}
+        write_json(run_dir / "running_state.json",running_state)
+        write_json(config.artifacts_root / "latest" / f"{config.name}_state.json",running_state)
 
         if config.preflight:
             preflight_result = run_preflight(config, run_dir)

@@ -49,9 +49,6 @@ $Approval = Get-Content -LiteralPath $ApprovalPath -Raw | ConvertFrom-Json
 if ($Approval.experiment_id -ne $ExperimentId -or $Approval.status -ne 'approved' -or $Approval.authority -ne 'human-owner') {
     throw "Approval is not scoped to approved human-owner experiment $ExperimentId."
 }
-if (@($Approval.authorized_actions) -notcontains 'train') {
-    throw "Approval does not authorize training for $ExperimentId."
-}
 
 $StopPath = Join-Path $ProjectRoot $KillSwitch
 if (Test-Path -LiteralPath $StopPath) {
@@ -80,6 +77,10 @@ $Hashes = foreach ($Item in $HashInputs) {
 $Hashes | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath (Join-Path $Preflight 'input-hashes.json') -Encoding utf8
 
 $Mode = if (Test-Path -LiteralPath $Checkpoint -PathType Leaf) { 'continue' } else { 'train' }
+$RequiredAction = if ($Mode -eq 'continue') { 'resume' } else { 'train' }
+if (@($Approval.authorized_actions) -notcontains $RequiredAction) {
+    throw "Approval does not authorize $RequiredAction for $ExperimentId."
+}
 $Metadata = [ordered]@{
     schema_version = 'blast-pit.v37.operator-preflight.v1'
     created_utc = (Get-Date).ToUniversalTime().ToString('o')
