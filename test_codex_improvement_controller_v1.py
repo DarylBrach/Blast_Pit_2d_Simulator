@@ -40,6 +40,8 @@ def config(repo: Path, tmp_path: Path) -> controller.ControllerConfig:
         test_timeout_seconds=60,
         evaluation_timeout_seconds=60,
         max_diff_bytes=10_000,
+        max_runtime_seconds=28_800,
+        authorization=repo / "approval_codex_improvement_v1.json",
         dry_run=False,
     )
 
@@ -75,9 +77,10 @@ def test_clean_repo_rejects_dirty_tree(tmp_path):
 
 def test_security_gate_accepts_allowlisted_change(tmp_path):
     repo = fixture_repo(tmp_path)
-    (repo / "tmp_2d_simulator_v37.py").write_text("VALUE = 2\n", encoding="utf-8")
     evidence = tmp_path / "cycle"
     evidence.mkdir()
+    controller.worktree_snapshot(repo,evidence)
+    (repo / "tmp_2d_simulator_v37.py").write_text("VALUE = 2\n", encoding="utf-8")
     passed, reasons, diff = controller.security_gate(config(repo, tmp_path), repo, evidence)
     assert passed and not reasons and "VALUE = 2" in diff
     packet = json.loads((evidence / "security_gate.json").read_text())
@@ -86,9 +89,10 @@ def test_security_gate_accepts_allowlisted_change(tmp_path):
 
 def test_security_gate_rejects_file_outside_allowlist(tmp_path):
     repo = fixture_repo(tmp_path)
-    (repo / "unexpected.py").write_text("x = 1\n", encoding="utf-8")
     evidence = tmp_path / "cycle"
     evidence.mkdir()
+    controller.worktree_snapshot(repo,evidence)
+    (repo / "unexpected.py").write_text("x = 1\n", encoding="utf-8")
     passed, reasons, _ = controller.security_gate(config(repo, tmp_path), repo, evidence)
     assert not passed
     assert any("outside allowlist" in reason for reason in reasons)
@@ -96,9 +100,10 @@ def test_security_gate_rejects_file_outside_allowlist(tmp_path):
 
 def test_security_gate_rejects_network_import(tmp_path):
     repo = fixture_repo(tmp_path)
-    (repo / "tmp_2d_simulator_v37.py").write_text("import socket\n", encoding="utf-8")
     evidence = tmp_path / "cycle"
     evidence.mkdir()
+    controller.worktree_snapshot(repo,evidence)
+    (repo / "tmp_2d_simulator_v37.py").write_text("import socket\n", encoding="utf-8")
     passed, reasons, _ = controller.security_gate(config(repo, tmp_path), repo, evidence)
     assert not passed
     assert any("forbidden" in reason for reason in reasons)
@@ -134,6 +139,12 @@ def test_atomic_json_replaces_complete_document(tmp_path):
     assert not list(tmp_path.glob("*.tmp"))
 
 
+def test_canonical_authorization_hash_ignores_line_endings(tmp_path):
+    lf=tmp_path/"lf.txt"; crlf=tmp_path/"crlf.txt"
+    lf.write_bytes(b"one\ntwo\n"); crlf.write_bytes(b"one\r\ntwo\r\n")
+    assert controller.canonical_text_sha256(lf)==controller.canonical_text_sha256(crlf)
+
+
 def test_schema_requires_governed_fields():
     schema = json.loads((Path(__file__).parent / "schemas" / "codex_improvement_result.schema.json").read_text())
     assert set(schema["required"]) == {"category", "hypothesis", "summary", "changed_files", "tests_run", "risks"}
@@ -147,10 +158,51 @@ def test_streamed_command_persists_live_output(tmp_path, capsys):
     assert "event-one" in capsys.readouterr().out
 
 
+def test_streamed_command_redacts_secret_from_evidence(tmp_path, capsys):
+    secret="do-not-retain-this-secret"
+    result=controller.streamed_command(
+        [sys.executable,"-c",f"print('{secret}')"],tmp_path,30,tmp_path/"events.jsonl",tmp_path/"stderr.log",redactions=[secret]
+    )
+    assert result.return_code==0
+    assert secret not in result.stdout
+    assert secret not in (tmp_path/"events.jsonl").read_text()
+    assert "<redacted>" in capsys.readouterr().out
+
+
+def test_codex_environment_is_minimal_and_identifies_redactions(monkeypatch):
+    monkeypatch.setenv("UNRELATED_PRIVATE_VALUE","not-for-codex")
+    monkeypatch.setenv("OPENAI_API_KEY","test-key-value")
+    env,secrets=controller.codex_environment()
+    assert "UNRELATED_PRIVATE_VALUE" not in env
+    assert env["OPENAI_API_KEY"]=="test-key-value"
+    assert secrets==["test-key-value"]
+
+
+def test_filesystem_gate_rejects_raw_change_outside_allowlist(tmp_path):
+    worktree=tmp_path/"worktree"; worktree.mkdir()
+    (worktree/"tmp_2d_simulator_v37.py").write_text("VALUE=1\n")
+    cycle=tmp_path/"cycle"; cycle.mkdir()
+    controller.worktree_snapshot(worktree,cycle)
+    (worktree/"README.md").write_text("unexpected\n")
+    passed,reasons=controller.filesystem_gate(worktree,cycle)
+    assert not passed
+    assert any("outside allowlist" in reason for reason in reasons)
+
+
+def test_evidence_manifest_seals_run_files(tmp_path):
+    (tmp_path/"state.json").write_text('{"status":"COMPLETE"}\n')
+    state={"run_id":"test-run","base_commit":"abc","status":"COMPLETE"}
+    digest=controller.seal_evidence(tmp_path,state)
+    manifest=json.loads((tmp_path/"evidence_manifest.json").read_text())
+    assert len(digest)==64
+    assert "state.json" in manifest["files"]
+    assert "evidence_manifest.json" not in manifest["files"]
+
+
 def test_codex_cycle_pins_windows_sandbox_and_model(monkeypatch,tmp_path):
     repo=fixture_repo(tmp_path); (repo/"schemas").mkdir(); (repo/"schemas"/"codex_improvement_result.schema.json").write_text("{}")
     cycle=tmp_path/"cycle"; cycle.mkdir(); captured={}
-    def fake(args,cwd,timeout,stdout_path,stderr_path,env=None):
+    def fake(args,cwd,timeout,stdout_path,stderr_path,env=None,redactions=()):
         captured["args"]=[str(value) for value in args]
         (cycle/"codex_final.json").write_text(json.dumps({"category":"no_change","hypothesis":"none","summary":"none","changed_files":[],"tests_run":[],"risks":[]}))
         return controller.CommandResult(captured["args"],str(cwd),0,"","")

@@ -10,16 +10,23 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import threading
+import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 ALLOWED_CHANGED_FILES = {"tmp_2d_simulator_v37.py", "test_tmp_2d_simulator_v37.py"}
+CODEX_ENV_ALLOWLIST = {
+    "APPDATA", "CODEX_HOME", "COMSPEC", "HOME", "LANG", "LC_ALL", "LOCALAPPDATA",
+    "OPENAI_API_KEY", "OPENAI_BASE_URL", "PATH", "PATHEXT", "SYSTEMROOT", "TEMP", "TMP",
+    "USERPROFILE", "WINDIR",
+}
+SENSITIVE_ENV_NAME = re.compile(r"(?i)(?:api[_-]?key|auth|credential|password|secret|token)")
+VOLATILE_WORKTREE_DIRS = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
 FORBIDDEN_ADDED_PATTERNS = (
     r"^\+.*\b(?:subprocess|socket|requests|urllib|http\.client)\b",
     r"^\+.*\b(?:eval|exec|compile)\s*\(",
@@ -45,6 +52,8 @@ class ControllerConfig:
     test_timeout_seconds: int
     evaluation_timeout_seconds: int
     max_diff_bytes: int
+    max_runtime_seconds: int
+    authorization: Path
     dry_run: bool
 
 
@@ -83,6 +92,150 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def canonical_text_sha256(path: Path) -> str:
+    data = path.read_bytes()
+    if data.startswith(b"\xef\xbb\xbf"):
+        data = data[3:]
+    return hashlib.sha256(data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")).hexdigest()
+
+
+def directory_manifest(root: Path, *, exclude_volatile: bool = False, include_mtime: bool = False) -> dict[str, dict[str, Any]]:
+    """Hash regular files without following symlinks or Windows reparse points."""
+    rows: dict[str, dict[str, Any]] = {}
+    if not root.exists():
+        return rows
+    for current, directories, files in os.walk(root, followlinks=False):
+        directories[:] = [name for name in directories if name != ".git"]
+        if exclude_volatile:
+            directories[:] = [name for name in directories if name not in VOLATILE_WORKTREE_DIRS]
+        for name in files:
+            path = Path(current) / name
+            if exclude_volatile and path.suffix == ".pyc":
+                continue
+            relative = path.relative_to(root).as_posix()
+            stat = path.lstat()
+            is_reparse = path.is_symlink() or bool(getattr(stat, "st_file_attributes", 0) & 0x400)
+            rows[relative] = {
+                "bytes": stat.st_size,
+                "kind": "reparse" if is_reparse else "file",
+                "sha256": None if is_reparse else sha256_file(path),
+            }
+            if include_mtime:
+                rows[relative]["mtime_ns"] = stat.st_mtime_ns
+    return dict(sorted(rows.items()))
+
+
+def load_authorization(config: ControllerConfig) -> tuple[dict[str, Any], str]:
+    path = config.authorization
+    if path.is_symlink() or path.stat().st_size > 64_000:
+        raise ImprovementError("Improvement authorization file is invalid")
+    record = json.loads(path.read_text(encoding="utf-8"))
+    required = {
+        "schema_version": "blast-pit.codex-improvement-authorization.v1",
+        "project": "Blast_Pit_2d_Simulator",
+        "status": "approved",
+        "authority": "human-owner",
+        "controller_version": VERSION,
+        "automatic_merge": False,
+        "automatic_push": False,
+        "automatic_release": False,
+        "candidate_network_access": False,
+    }
+    if any(record.get(key) != value for key, value in required.items()):
+        raise ImprovementError("Improvement authorization scope mismatch")
+    try:
+        expires = datetime.fromisoformat(str(record["expires_utc"]).replace("Z", "+00:00"))
+    except (KeyError, ValueError) as exc:
+        raise ImprovementError("Improvement authorization expiry is invalid") from exc
+    if datetime.now(timezone.utc) >= expires:
+        raise ImprovementError("Improvement authorization has expired")
+    if config.cycles > int(record.get("max_cycles", 0)):
+        raise ImprovementError("Requested cycles exceed human authorization")
+    if config.max_runtime_seconds > int(record.get("max_runtime_seconds", 0)):
+        raise ImprovementError("Requested runtime exceeds human authorization")
+    expected_hashes = {
+        "controller_source_sha256": canonical_text_sha256(config.repo / "CodexImprovementController_v1.py"),
+        "candidate_driver_source_sha256": canonical_text_sha256(config.repo / "improvement_candidate_driver.py"),
+        "score_source_sha256": canonical_text_sha256(config.repo / "improvement_score_checkpoint.py"),
+        "development_seed_sha256": canonical_text_sha256(config.repo / "improvement_dev_seeds_v1.txt"),
+    }
+    if any(record.get(key) != value for key, value in expected_hashes.items()):
+        raise ImprovementError("Improvement authorization source or seed hash mismatch")
+    if sorted(record.get("allowed_changed_files", [])) != sorted(ALLOWED_CHANGED_FILES):
+        raise ImprovementError("Improvement authorization file allowlist mismatch")
+    return record, canonical_text_sha256(path)
+
+
+def protection_snapshot(config: ControllerConfig) -> dict[str, Any]:
+    production_root = config.repo / "artifacts" / "v37" / "robustness-v37-8h-001"
+    return {
+        "head": require_success(git(config, ["rev-parse", "HEAD"]), "protected HEAD").stdout.strip(),
+        "tree": require_success(git(config, ["rev-parse", "HEAD^{tree}"]), "protected tree").stdout.strip(),
+        "status": require_success(git(config, ["status", "--porcelain=v1", "--untracked-files=all"]), "protected status").stdout,
+        "production_artifact_root": str(production_root),
+        "production_artifacts": directory_manifest(production_root, include_mtime=True),
+    }
+
+
+def finalize_protection(config: ControllerConfig, run_dir: Path, before: dict[str, Any]) -> bool:
+    after = protection_snapshot(config)
+    passed = before == after
+    atomic_json(run_dir / "production_guard.json", {"pass": passed, "before": before, "after": after})
+    return passed
+
+
+def seal_evidence(run_dir: Path, state: dict[str, Any]) -> str:
+    manifest = {
+        "schema_version": "blast-pit.improvement-evidence-manifest.v1",
+        "run_id": state["run_id"],
+        "base_commit": state["base_commit"],
+        "status": state["status"],
+        "controller_source_sha256": canonical_text_sha256(Path(__file__)),
+        "files": directory_manifest(run_dir),
+        "sealed_at": utc_now(),
+    }
+    path = run_dir / "evidence_manifest.json"
+    atomic_json(path, manifest)
+    return sha256_file(path)
+
+
+def worktree_snapshot(worktree: Path, cycle_dir: Path) -> None:
+    atomic_json(cycle_dir / "worktree_baseline_manifest.json", {
+        "root": str(worktree),
+        "files": directory_manifest(worktree, exclude_volatile=True),
+    })
+
+
+def filesystem_gate(worktree: Path, cycle_dir: Path) -> tuple[bool, list[str]]:
+    baseline = json.loads((cycle_dir / "worktree_baseline_manifest.json").read_text(encoding="utf-8"))["files"]
+    current = directory_manifest(worktree, exclude_volatile=True)
+    changed = sorted(path for path in set(baseline) | set(current) if baseline.get(path) != current.get(path))
+    unexpected = [path for path in changed if path not in ALLOWED_CHANGED_FILES]
+    deleted_allowed = [path for path in changed if path in ALLOWED_CHANGED_FILES and path not in current]
+    reparse = [path for path in changed if current.get(path, {}).get("kind") == "reparse"]
+    reasons = []
+    if unexpected:
+        reasons.append(f"raw filesystem changes outside allowlist: {unexpected}")
+    if deleted_allowed:
+        reasons.append(f"allowlisted source deletion is forbidden: {deleted_allowed}")
+    if reparse:
+        reasons.append(f"reparse-point changes are forbidden: {reparse}")
+    atomic_json(cycle_dir / "filesystem_gate.json", {
+        "pass": not reasons,
+        "changed_files": changed,
+        "reasons": reasons,
+        "before_file_count": len(baseline),
+        "after_file_count": len(current),
+    })
+    return not reasons, reasons
+
+
+def codex_environment() -> tuple[dict[str, str], list[str]]:
+    env = {key: value for key, value in os.environ.items() if key.upper() in CODEX_ENV_ALLOWLIST}
+    secrets = [value for key, value in env.items() if SENSITIVE_ENV_NAME.search(key) and len(value) >= 4]
+    return env, secrets
+
+
 def command(config: ControllerConfig, args: Sequence[str | Path], cwd: Path, timeout: int, *, env: dict[str, str] | None = None) -> CommandResult:
     values = [str(value) for value in args]
     completed = subprocess.run(values, cwd=str(cwd), env=env, text=True, encoding="utf-8", errors="replace",
@@ -97,17 +250,24 @@ def require_success(result: CommandResult, label: str) -> CommandResult:
 
 
 def streamed_command(args: Sequence[str | Path], cwd: Path, timeout: int, stdout_path: Path, stderr_path: Path,
-                     *, env: dict[str,str] | None=None) -> CommandResult:
+                     *, env: dict[str,str] | None=None, redactions: Sequence[str] = ()) -> CommandResult:
     values=[str(value) for value in args]
     creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform=="win32" else 0
     proc=subprocess.Popen(values,cwd=str(cwd),env=env,text=True,encoding="utf-8",errors="replace",bufsize=1,
                           stdout=subprocess.PIPE,stderr=subprocess.PIPE,creationflags=creationflags)
     stdout_lines: list[str]=[]; stderr_lines: list[str]=[]
 
+    def sanitize(value: str) -> str:
+        for secret in redactions:
+            if secret:
+                value = value.replace(secret, "<redacted>")
+        return re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]{12,}", r"\1<redacted>", value)
+
     def drain(stream: Any,path: Path,rows: list[str],mirror: bool) -> None:
         path.parent.mkdir(parents=True,exist_ok=True)
         with path.open("w",encoding="utf-8",newline="\n") as handle:
             for line in iter(stream.readline,""):
+                line=sanitize(line)
                 rows.append(line); handle.write(line); handle.flush()
                 if mirror:
                     sys.stdout.write(line); sys.stdout.flush()
@@ -147,6 +307,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--test-timeout", type=int, default=300)
     parser.add_argument("--evaluation-timeout", type=int, default=600)
     parser.add_argument("--max-diff-bytes", type=int, default=120_000)
+    parser.add_argument("--max-runtime-seconds", type=int, default=28_800)
+    parser.add_argument("--authorization", type=Path)
     parser.add_argument("--dry-run", action="store_true")
     return parser
 
@@ -158,7 +320,9 @@ def make_config(argv: Sequence[str] | None = None) -> ControllerConfig:
         artifact_root=args.artifact_root.resolve(), worktree_root=args.worktree_root.resolve(), model=str(args.model),
         cycles=max(1, args.cycles), codex_timeout_seconds=max(60, args.codex_timeout),
         test_timeout_seconds=max(30, args.test_timeout), evaluation_timeout_seconds=max(60, args.evaluation_timeout),
-        max_diff_bytes=max(1_000, args.max_diff_bytes), dry_run=bool(args.dry_run),
+        max_diff_bytes=max(1_000, args.max_diff_bytes), max_runtime_seconds=max(300, args.max_runtime_seconds),
+        authorization=(args.authorization or (args.repo / "approval_codex_improvement_v1.json")).resolve(),
+        dry_run=bool(args.dry_run),
     )
     if not (config.repo / ".git").exists():
         raise ImprovementError(f"Repository is not a Git worktree: {config.repo}")
@@ -166,6 +330,8 @@ def make_config(argv: Sequence[str] | None = None) -> ControllerConfig:
         raise ImprovementError(f"Python interpreter not found: {config.python}")
     if not config.codex.is_file():
         raise ImprovementError(f"Codex executable not found: {config.codex}")
+    if not config.authorization.is_file():
+        raise ImprovementError(f"Improvement authorization not found: {config.authorization}")
     return config
 
 
@@ -187,7 +353,9 @@ def candidate_train(config: ControllerConfig, source_root: Path, output_root: Pa
         "--artifact-root", output_root,
         "--source-v36", source_root / "artifacts" / "v36" / "qdppo-evaluation-001" / "evolution_state_v36.npz",
         "--seed-file", source_root / "improvement_dev_seeds_v1.txt",
+        "--parent-authorization", source_root / "approval_codex_improvement_v1.json",
         "--generations", "4", "--max-frames", "64", "--rollout-frames", "64",
+        "--max-runtime-seconds", str(min(600, config.evaluation_timeout_seconds)),
     ], source_root, config.evaluation_timeout_seconds)
     write_command_evidence(cycle_dir / "candidate_training.json", result)
     require_success(result, "candidate development training")
@@ -267,7 +435,15 @@ def codex_cycle(config: ControllerConfig, worktree: Path, cycle_dir: Path, promp
         "-c", 'windows.sandbox="elevated"', "-c", 'approval_policy="never"', "-c", 'model_reasoning_effort="high"', "--output-schema", schema,
         "--output-last-message", final_output, prompt,
     ]
-    result = streamed_command(args,worktree,config.codex_timeout_seconds,cycle_dir/"codex_events.jsonl",cycle_dir/"codex_stderr.log",env=os.environ.copy())
+    env, secrets = codex_environment()
+    atomic_json(cycle_dir / "codex_environment.json", {
+        "passed_variable_names": sorted(env),
+        "redacted_variable_names": sorted(key for key in env if SENSITIVE_ENV_NAME.search(key)),
+        "candidate_network_access": False,
+        "codex_api_access": True,
+    })
+    result = streamed_command(args,worktree,config.codex_timeout_seconds,cycle_dir/"codex_events.jsonl",cycle_dir/"codex_stderr.log",
+                              env=env, redactions=secrets)
     atomic_json(cycle_dir / "codex_command.json", {"command": [str(value) for value in args[:-1]] + ["<prompt>"], "return_code": result.return_code})
     require_success(result, "codex exec")
     try:
@@ -291,6 +467,9 @@ def changed_files(config: ControllerConfig, worktree: Path) -> list[str]:
 def security_gate(config: ControllerConfig, worktree: Path, cycle_dir: Path) -> tuple[bool, list[str], str]:
     files = changed_files(config, worktree)
     reasons: list[str] = []
+    filesystem_ok, filesystem_reasons = filesystem_gate(worktree, cycle_dir)
+    if not filesystem_ok:
+        reasons.extend(filesystem_reasons)
     if not files:
         reasons.append("no candidate changes")
     unexpected = [path for path in files if path not in ALLOWED_CHANGED_FILES]
@@ -357,17 +536,23 @@ def production_status(config: ControllerConfig) -> dict[str, Any]:
 
 
 def run(config: ControllerConfig) -> int:
+    started_monotonic = time.monotonic()
     base_commit = clean_repo(config)
+    authorization, authorization_sha256 = load_authorization(config)
     rid = run_id()
     run_dir = config.artifact_root / rid
     run_dir.mkdir(parents=True, exist_ok=False)
     previous_state_path=config.artifact_root/"latest.json"
     previous_state=json.loads(previous_state_path.read_text(encoding="utf-8")) if previous_state_path.is_file() else {}
     historical_cycles=list(previous_state.get("cycles",[]))[-3:]
+    protection_before = protection_snapshot(config)
+    atomic_json(run_dir / "production_guard_before.json", protection_before)
+    atomic_json(run_dir / "authorization.json", {"path": str(config.authorization), "sha256": authorization_sha256, "record": authorization})
     state: dict[str, Any] = {"schema_version": "blast-pit.improvement-controller.v1", "version": VERSION, "run_id": rid,
                              "status": "BASELINE_EVALUATING", "started_at": utc_now(), "base_commit": base_commit,
                              "cycles_requested": config.cycles, "cycles": [], "prior_run_id":previous_state.get("run_id"),
-                             "historical_lessons_loaded":len(historical_cycles),"final_candidate_commit": None}
+                             "historical_lessons_loaded":len(historical_cycles),"final_candidate_commit": None,
+                             "authorization_sha256": authorization_sha256, "max_runtime_seconds": config.max_runtime_seconds}
     atomic_json(run_dir / "state.json", state)
     production = production_status(config)
     baseline = baseline_score(config, run_dir)
@@ -375,13 +560,21 @@ def run(config: ControllerConfig) -> int:
     state["status"] = "RUNNING"
     atomic_json(run_dir / "state.json", state)
     if config.dry_run:
-        state.update({"status": "DRY_RUN_COMPLETE", "ended_at": utc_now()})
+        protected = finalize_protection(config, run_dir, protection_before)
+        state.update({"status": "DRY_RUN_COMPLETE" if protected else "ERROR", "ended_at": utc_now(),
+                      "production_modified": not protected, "automatic_release": False,
+                      "evidence_manifest": "evidence_manifest.json"})
         atomic_json(run_dir / "state.json", state)
+        state["evidence_manifest_sha256"] = seal_evidence(run_dir, state)
         print(json.dumps(state, indent=2, default=str))
-        return 0
+        return 0 if protected else 2
 
     current_ref = base_commit
     for cycle in range(1, config.cycles + 1):
+        if time.monotonic() - started_monotonic >= config.max_runtime_seconds:
+            state["cycles"].append({"cycle": cycle, "status": "ERROR", "error": "authorized controller runtime exhausted", "ended_at": utc_now()})
+            atomic_json(run_dir / "state.json", state)
+            break
         cycle_dir = run_dir / f"cycle_{cycle:03d}"
         cycle_dir.mkdir(parents=True)
         branch = f"codex/improvement-{rid.lower()}-c{cycle:03d}"
@@ -392,6 +585,7 @@ def run(config: ControllerConfig) -> int:
         atomic_json(run_dir / "state.json", state)
         try:
             create_worktree(config, current_ref, branch, worktree, cycle_dir)
+            worktree_snapshot(worktree, cycle_dir)
             record["status"] = "CODEX_RUNNING"; atomic_json(run_dir / "state.json", state)
             decision = codex_cycle(config, worktree, cycle_dir, prompt_for_cycle(baseline, production, cycle,[*historical_cycles,*state["cycles"][:-1]]))
             record["codex_decision"] = decision
@@ -421,13 +615,17 @@ def run(config: ControllerConfig) -> int:
             atomic_json(run_dir / "state.json", state)
 
     accepted_count = sum(1 for item in state["cycles"] if item["status"] == "ACCEPTED_CANDIDATE_BRANCH")
-    state.update({"status": "COMPLETE", "ended_at": utc_now(), "accepted_cycles": accepted_count,
-                  "rejected_or_error_cycles": config.cycles - accepted_count,
-                  "production_modified": False, "automatic_release": False})
+    protected = finalize_protection(config, run_dir, protection_before)
+    has_cycle_error = any(item["status"] == "ERROR" for item in state["cycles"])
+    state.update({"status": "COMPLETE" if protected else "ERROR", "ended_at": utc_now(), "accepted_cycles": accepted_count,
+                  "rejected_or_error_cycles": len(state["cycles"]) - accepted_count,
+                  "production_modified": not protected, "automatic_release": False,
+                  "evidence_manifest": "evidence_manifest.json"})
     atomic_json(run_dir / "state.json", state)
+    state["evidence_manifest_sha256"] = seal_evidence(run_dir, state)
     atomic_json(config.artifact_root / "latest.json", state)
     print(json.dumps(state, indent=2, default=str))
-    return 0 if all(item["status"] != "ERROR" for item in state["cycles"]) else 2
+    return 0 if protected and not has_cycle_error else 2
 
 
 def main(argv: Sequence[str] | None = None) -> int:

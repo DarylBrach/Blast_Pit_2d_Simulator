@@ -23,7 +23,9 @@ $ControllerArgs = @(
     '--repo', $ProjectRoot,
     '--python', $Python,
     '--codex', $Codex,
-    '--cycles', $Cycles.ToString()
+    '--cycles', $Cycles.ToString(),
+    '--max-runtime-seconds', '28800',
+    '--authorization', (Join-Path $ProjectRoot 'approval_codex_improvement_v1.json')
 )
 if ($DryRun) { $ControllerArgs += '--dry-run' }
 
@@ -33,7 +35,7 @@ $RunnerArgs = @(
     '--cwd', $ProjectRoot,
     '--name', 'codex-improvement-controller',
     '--artifacts', $EvidenceRoot,
-    '--timeout', '7200',
+    '--timeout', '28800',
     '--stall', '0',
     '--retries', '0',
     '--no-ollama',

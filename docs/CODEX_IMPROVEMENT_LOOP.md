@@ -10,19 +10,22 @@ It does not edit `main`, reuse terminal audit seeds, modify the completed `robus
 
 The controller persists `BASELINE_EVALUATING`, `RUNNING`, per-cycle `WORKTREE_CREATING`, `CODEX_RUNNING`, `SECURITY_VALIDATING`, `TESTING`, `EVALUATING`, and terminal `ACCEPTED_CANDIDATE_BRANCH`, `REJECTED`, or `ERROR` states. The overall terminal state is `COMPLETE`.
 
-The user's 2026-07-11 authorization permits disposable development evaluation. Each fixture receives an experiment-specific local approval with `development_fixture: true`, `train` authority only, and no audit, export, release, or production-promotion authority.
+The retained `approval_codex_improvement_v1.json` records the user's 2026-07-11 authorization, expires on 2026-08-11, binds the controller, candidate driver, trusted scorer, development seeds, two-file allowlist, ten-cycle ceiling, and 28,800-second runtime ceiling, and denies automatic push, merge, audit, or release. Each fixture receives an experiment-specific `controller-development-delegation` with the parent authorization hash, `development_fixture: true`, a 600-second internal runtime budget, `train` authority only, and no audit, export, release, or production-promotion authority. The controller does not represent an automatically created child record as a new human approval.
 
 ## Safety gates
 
 - Base repository must be clean.
 - Each cycle starts in a new `codex/improvement-*` Git worktree and branch.
 - Codex runs noninteractively with the locally supported `gpt-5.5` model, high reasoning effort, `--sandbox workspace-write`, the explicit Windows elevated sandbox backend, `approval_policy="never"`, structured output, ephemeral session storage, and ignored user configuration. Pinning the model and sandbox backend avoids inheriting incompatible cached desktop settings. JSONL events stream live into both controller evidence and CodexLightRunner output.
-- Only `tmp_2d_simulator_v37.py` and `test_tmp_2d_simulator_v37.py` may change.
+- Only `tmp_2d_simulator_v37.py` and `test_tmp_2d_simulator_v37.py` may change. An external pre-Codex filesystem manifest detects raw changes without trusting candidate Git metadata.
 - Added subprocess, network, dynamic-code execution, shell, and deletion primitives are rejected.
 - Diff size and symlink changes are bounded or rejected.
 - Python compilation and the full repository test suite must pass.
 - The candidate is trained with development-only seeds and a small deterministic fixture.
 - The checkpoint is scored by the unchanged trusted evaluator from `main` on a separate deterministic development suite.
+- Codex receives a minimal environment allowlist; retained event streams redact passed secret values and bearer credentials. The Codex API is the only authorized network exception, while candidate simulator code remains network-denied.
+- Pre/post evidence records main HEAD, Git tree, worktree status, and SHA-256/size/mtime inventory for the retained production experiment. `production_modified` is derived from this comparison rather than asserted.
+- Each completed controller bundle is sealed by `evidence_manifest.json`, which hashes every retained evidence file as a set.
 - Process/correctness changes must remain within non-regression limits. Algorithm changes must also improve CVaR or mean fitness by at least 0.005.
 - Rejected-cycle hypotheses, scores, and exact gate failures from both the current run and the latest completed run are injected into later prompts so the autonomous loop must correct prior regressions instead of blindly repeating them.
 - Accepted changes are committed only to the candidate branch. Promotion to `main` remains human-reviewed.
@@ -43,6 +46,8 @@ The dry run verifies repository state and produces a deterministic baseline deve
 ```powershell
 .\run_codex_improvement_monitor.bat -Cycles 1
 ```
+
+The batch wrapper is the supported Windows entrypoint and uses a process-local PowerShell execution-policy bypass. Both CodexLightRunner and the parent authorization cap a controller invocation at eight hours. `-Cycles` may be 1 through 10; start with one cycle and review its evidence before increasing autonomy.
 
 Runner live state:
 
@@ -66,7 +71,7 @@ Remove a stale stop file only after reviewing the retained runner and controller
 
 ## Candidate review and promotion
 
-The controller's `latest.json` records the final candidate commit and worktree. Review the patch, tests, deterministic score, risks, and Git branch. A human may then open a pull request or reject the branch. Any production experiment after a source change requires a new experiment ID, seed commitment, fingerprint, and approval; historical approval must never be rewritten.
+The controller's `latest.json` records the final candidate commit, worktree, authorization hash, and evidence-manifest hash. Review the patch, tests, deterministic score, risks, raw-filesystem gate, production guard, manifest, and Git branch. A human may then open a pull request or reject the branch. Any production experiment after a source change requires a new experiment ID, seed commitment, fingerprint, and approval; historical approval must never be rewritten.
 
 ## Limitations
 
@@ -75,3 +80,4 @@ The controller's `latest.json` records the final candidate commit and worktree. 
 - Worktrees are retained for auditability and require deliberate later cleanup.
 - The controller does not push or merge candidate branches.
 - A compromised operating-system account can exceed application-level controls; use a dedicated account or VM for stronger isolation.
+- The retained human authorization is a local authorization record, not a cryptographic signature. Renew it deliberately after expiry or any bound source/seed/allowlist change.
