@@ -216,6 +216,15 @@ def test_stale_private_fold_blocks_new_run_without_deleting_evidence(tmp_path):
     assert fold.read_text(encoding="utf-8") == '{"seeds":[1]}\n'
 
 
+def test_stale_fold_scan_accepts_only_the_exact_regular_controller_lock(tmp_path):
+    lock = tmp_path / ".controller-v2.lock"
+    lock.write_text("owned by kernel lock test\n", encoding="utf-8")
+    v2.reject_stale_private_folds(tmp_path)
+    (tmp_path / "unexpected.txt").write_text("unsafe\n", encoding="utf-8")
+    with pytest.raises(v2.V2Error, match="unsafe stale worktree entry"):
+        v2.reject_stale_private_folds(tmp_path)
+
+
 def test_cumulative_diff_policy_rechecks_earlier_forbidden_primitive():
     diff = (
         "diff --git a/tmp_2d_simulator_v37.py b/tmp_2d_simulator_v37.py\n"

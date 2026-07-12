@@ -7,7 +7,7 @@
   "issued_utc": "2026-07-12T00:45:00Z",
   "expires_utc": "2026-08-11T23:59:59Z",
   "controller_version": "2.2.0",
-  "controller_source_sha256": "33ef9951b3b8c39b8b4f3edbb25b2f20402661f3ac1d2e1aa1a4b8f0b24a9da5",
+  "controller_source_sha256": "c2ccc440432b1f7d778a9890474e966d2a7dc92fc6693b18b02f6a8f11f9ddbc",
   "runtime_source_sha256": "6b3170802f29d17d1ffe9976fcdce702dcc0682c9df3cea16a1de28eea2582e9",
   "v1_controller_source_sha256": "8d497714adbc3296d53572e133508a07ae9a6dbd5a268746bbd6d0a1b7fc4b03",
   "candidate_driver_source_sha256": "687faeaed175fb74596380a8562a0ea6053ead59d3ce3a0d1e81d6a16c4e41f5",

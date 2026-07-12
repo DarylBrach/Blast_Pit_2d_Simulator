@@ -2193,6 +2193,10 @@ def reject_stale_private_folds(worktree_root: Path) -> None:
         return
     runtime.validate_no_reparse_ancestors(worktree_root, require_exists=True)
     for child in worktree_root.iterdir():
+        if child.name == ".controller-v2.lock":
+            if runtime.is_reparse(child) or not child.is_file() or child.stat(follow_symlinks=False).st_nlink != 1:
+                raise V2Error(f"unsafe controller lock entry requires quarantine: {child}")
+            continue
         if runtime.is_reparse(child) or not child.is_dir():
             raise V2Error(f"unsafe stale worktree entry requires quarantine: {child}")
         private = child / "private_folds"
