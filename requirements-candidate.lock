@@ -1,0 +1,17 @@
+# Exact Linux runtime dependencies for Dockerfile.candidate.
+# Runtime authorization additionally binds the immutable built image ID.
+attrs==24.2.0 --hash=sha256:81921eb96de3191c8258c199618104dd27ac608d9366f5e35d011eae1867ede2
+iniconfig==2.3.0 --hash=sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12
+jsonschema==4.26.0 --hash=sha256:d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce
+jsonschema-specifications==2025.9.1 --hash=sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe
+llvmlite==0.48.0 --hash=sha256:416fa4c2c66c2c6dc6d0a402648c19206e548efa0aa1eff01ad5cdad0af8217d
+numba==0.66.0 --hash=sha256:0999e3ee1b18c48e1fb51d11af35ef59852c7f4f50569c9550c25faef0616ad1
+numpy==2.2.0 --hash=sha256:85ad7d11b309bd132d74397fcf2920933c9d1dc865487128f5c03d580f2c3d03
+packaging==25.0 --hash=sha256:29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484
+pluggy==1.6.0 --hash=sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746
+pygame==2.6.1 --hash=sha256:1206125f14cae22c44565c9d333607f1d9f59487b1f1432945dfc809aeaa3e88
+Pygments==2.20.0 --hash=sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176
+pytest==9.1.1 --hash=sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c
+referencing==0.37.0 --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231
+rpds-py==2026.6.3 --hash=sha256:ecabd69db66de867690f9797f2f8fa27ba501bbc24540cbdbdc649cd15888ba6
+typing_extensions==4.15.0 --hash=sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548

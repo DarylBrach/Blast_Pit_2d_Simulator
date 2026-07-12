@@ -26,3 +26,7 @@ The following checklist remains release qualification work; unchecked narrative 
 ## Improvement harness v2 QA boundary
 
 A v2 result is review-ready only when the root decision is 100/100 with every deterministic gate, all seven specialists, independent final QA, Fold C evaluation, and production protection passing. Status `COMPLETE` alone is insufficient. `COMPLETE_WITH_REJECTIONS` may represent successful controller execution but remains subject to the root decision. No harness QA result authorizes production use or release.
+
+Historical v2.1 QA used the Windows audit-guard evidence described below; it does not qualify v2.2. `10/10` means all ten rubric dimensions received ten points, totaling 100/100, and human review only. Current v2.2 totals and successful supported DryRun evidence remain pending.
+
+For v2.2, the preceding v2.1 audit-guard/count statement is historical. Final QA instead requires the immutable image attestation and recipe, Docker host identity and exact policy, read-only workspace, bounded tmpfs, trusted exporter validation, native canary, lifecycle/quiescence and container recovery, then ACL recovery and exact-SDDL ordering. Final suite totals and successful DryRun are pending. `10/10` remains 100/100 and human review only.

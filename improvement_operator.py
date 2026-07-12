@@ -279,17 +279,181 @@ def load_operator_record(artifact_root: Path, run_id: str | None = None) -> tupl
 def status_record(artifact_root: Path) -> tuple[dict[str, Any], int]:
     verify_record(artifact_root)
     decision, _, _ = load_operator_record(artifact_root)
+    decision = {
+        **decision,
+        "host_acl_recovery": recovery_status(artifact_root),
+        "host_container_recovery": container_recovery_status(artifact_root),
+    }
     execution = decision["execution"]
-    blocked = execution != "SUCCESS" or bool(decision["blockers"])
+    blocked = (
+        execution != "SUCCESS"
+        or bool(decision["blockers"])
+        or decision["host_acl_recovery"]["status"] == "RECOVERY_REQUIRED"
+        or decision["host_container_recovery"]["status"] == "RECOVERY_REQUIRED"
+    )
     return decision, EXIT_BLOCKED if blocked else EXIT_OK
 
 
 def review_record(artifact_root: Path) -> tuple[dict[str, Any], int]:
     verify_record(artifact_root)
     decision, _, _ = load_operator_record(artifact_root)
-    if decision["execution"] == "SUCCESS" and decision["review"] == "PASS" and decision["promotion"] == "HUMAN_REVIEW_PENDING" and decision["blockers"] == []:
+    decision = {
+        **decision,
+        "host_acl_recovery": recovery_status(artifact_root),
+        "host_container_recovery": container_recovery_status(artifact_root),
+    }
+    if decision["execution"] == "SUCCESS" and decision["review"] == "PASS" and decision["promotion"] == "HUMAN_REVIEW_PENDING" and decision["blockers"] == [] and decision["host_acl_recovery"]["status"] != "RECOVERY_REQUIRED" and decision["host_container_recovery"]["status"] != "RECOVERY_REQUIRED":
         return decision, EXIT_OK
     return decision, EXIT_BLOCKED
+
+
+def recovery_status(artifact_root: Path) -> dict[str, Any]:
+    root = artifact_root.resolve()
+    latest_path = root / "acl_recovery_latest.json"
+    if not latest_path.exists():
+        return {"status": "NO_RECOVERY_EVENTS", "event_id": None, "active_leases": []}
+    latest = read_json(latest_path, "ACL recovery latest", EXIT_TAMPERED)
+    required = {
+        "schema_version", "event_id", "event_path", "status", "ledger_hash", "recovery_manifest_sha256",
+        "recovery_decision_sha256", "active_leases",
+    }
+    if set(latest) != required or latest.get("schema_version") != "blast-pit.acl-recovery-latest.v1" or latest.get("status") not in {"RECOVERED", "RECOVERY_REQUIRED"}:
+        raise OperatorError("ACL recovery latest record is invalid", EXIT_TAMPERED)
+    event_path = latest.get("event_path")
+    if not isinstance(event_path, str) or "\\" in event_path or Path(event_path).is_absolute() or ".." in Path(event_path).parts:
+        raise OperatorError("ACL recovery event path is invalid", EXIT_TAMPERED)
+    event_dir = (root / event_path).resolve()
+    if root not in event_dir.parents or not event_dir.is_dir() or _is_reparse(event_dir):
+        raise OperatorError("ACL recovery event directory is missing or unsafe", EXIT_TAMPERED)
+    manifest = event_dir / "recovery_manifest.json"
+    decision = event_dir / "recovery_decision.json"
+    if not manifest.is_file() or manifest.is_symlink() or not decision.is_file() or decision.is_symlink():
+        raise OperatorError("ACL recovery sealed event files are missing or unsafe", EXIT_TAMPERED)
+    if sha256_file(manifest) != latest.get("recovery_manifest_sha256") or sha256_file(decision) != latest.get("recovery_decision_sha256"):
+        raise OperatorError("ACL recovery latest hashes disagree with the sealed event", EXIT_TAMPERED)
+    manifest_record = read_json(manifest, "ACL recovery manifest", EXIT_TAMPERED)
+    decision_record = read_json(decision, "ACL recovery decision", EXIT_TAMPERED)
+    files = manifest_record.get("files")
+    tree_files, _ = _strict_tree(event_dir)
+    actual = {item for item in tree_files if item != "recovery_manifest.json"}
+    if (
+        manifest_record.get("event_id") != latest.get("event_id")
+        or manifest_record.get("status") != latest.get("status")
+        or decision_record.get("event_id") != latest.get("event_id")
+        or decision_record.get("status") != latest.get("status")
+        or not isinstance(files, dict)
+        or set(files) != actual
+    ):
+        raise OperatorError("ACL recovery sealed event identity or file set is invalid", EXIT_TAMPERED)
+    for relative, descriptor in files.items():
+        path = event_dir / relative
+        if (
+            not isinstance(descriptor, dict)
+            or not path.is_file()
+            or path.is_symlink()
+            or descriptor.get("bytes") != path.stat().st_size
+            or descriptor.get("sha256") != sha256_file(path)
+        ):
+            raise OperatorError(f"ACL recovery sealed file mismatch: {relative}", EXIT_TAMPERED)
+    ledger_path = root / "acl_recovery_ledger.jsonl"
+    if not ledger_path.is_file() or ledger_path.is_symlink() or ledger_path.stat().st_size > MAX_JSON_BYTES:
+        raise OperatorError("ACL recovery ledger is missing or unsafe", EXIT_TAMPERED)
+    previous = "0" * 64; sequence = 0; selected = None
+    for number, line in enumerate(ledger_path.read_text(encoding="utf-8").splitlines(), 1):
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise OperatorError(f"ACL recovery ledger JSON is invalid at line {number}", EXIT_TAMPERED) from exc
+        supplied = row.get("ledger_hash"); unsigned = dict(row); unsigned.pop("ledger_hash", None)
+        calculated = hashlib.sha256(json.dumps(unsigned, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+        if row.get("sequence") != sequence + 1 or row.get("previous_ledger_hash") != previous or supplied != calculated:
+            raise OperatorError(f"ACL recovery ledger chain mismatch at line {number}", EXIT_TAMPERED)
+        sequence += 1; previous = supplied
+        if row.get("event_id") == latest.get("event_id"):
+            selected = row
+    if selected is None or selected.get("ledger_hash") != latest.get("ledger_hash") or selected.get("status") != latest.get("status"):
+        raise OperatorError("ACL recovery latest record is not anchored in its ledger", EXIT_TAMPERED)
+    active = latest.get("active_leases")
+    if not isinstance(active, list) or not all(isinstance(item, str) for item in active):
+        raise OperatorError("ACL recovery active-lease list is invalid", EXIT_TAMPERED)
+    if (latest["status"] == "RECOVERED") is bool(active):
+        raise OperatorError("ACL recovery status contradicts its active-lease list", EXIT_TAMPERED)
+    return {"status": latest["status"], "event_id": latest["event_id"], "active_leases": active}
+
+
+def container_recovery_status(artifact_root: Path) -> dict[str, Any]:
+    root = artifact_root.resolve()
+    latest_path = root / "container_recovery_latest.json"
+    if not latest_path.exists():
+        return {"status": "NO_RECOVERY_EVENTS", "event_id": None}
+    latest = read_json(latest_path, "container recovery latest", EXIT_TAMPERED)
+    required = {
+        "schema_version", "event_id", "event_path", "status", "ledger_hash",
+        "recovery_manifest_sha256", "recovery_decision_sha256",
+    }
+    allowed = {"QUIESCENT", "RECOVERED", "RECOVERY_REQUIRED"}
+    if set(latest) != required or latest.get("schema_version") != "blast-pit.container-recovery-latest.v1" or latest.get("status") not in allowed:
+        raise OperatorError("container recovery latest record is invalid", EXIT_TAMPERED)
+    event_path = latest.get("event_path")
+    if not isinstance(event_path, str) or "\\" in event_path or Path(event_path).is_absolute() or ".." in Path(event_path).parts:
+        raise OperatorError("container recovery event path is invalid", EXIT_TAMPERED)
+    event_dir = (root / event_path).resolve()
+    if root not in event_dir.parents or not event_dir.is_dir() or _is_reparse(event_dir):
+        raise OperatorError("container recovery event directory is missing or unsafe", EXIT_TAMPERED)
+    manifest = event_dir / "recovery_manifest.json"
+    decision = event_dir / "recovery_decision.json"
+    if not manifest.is_file() or manifest.is_symlink() or not decision.is_file() or decision.is_symlink():
+        raise OperatorError("container recovery sealed event files are missing or unsafe", EXIT_TAMPERED)
+    if sha256_file(manifest) != latest.get("recovery_manifest_sha256") or sha256_file(decision) != latest.get("recovery_decision_sha256"):
+        raise OperatorError("container recovery latest hashes disagree with the sealed event", EXIT_TAMPERED)
+    manifest_record = read_json(manifest, "container recovery manifest", EXIT_TAMPERED)
+    decision_record = read_json(decision, "container recovery decision", EXIT_TAMPERED)
+    files = manifest_record.get("files")
+    tree_files, _ = _strict_tree(event_dir)
+    actual = {item for item in tree_files if item != "recovery_manifest.json"}
+    if (
+        manifest_record.get("event_id") != latest.get("event_id")
+        or manifest_record.get("status") != latest.get("status")
+        or decision_record.get("event_id") != latest.get("event_id")
+        or decision_record.get("status") != latest.get("status")
+        or not isinstance(files, dict)
+        or set(files) != actual
+    ):
+        raise OperatorError("container recovery sealed event identity or file set is invalid", EXIT_TAMPERED)
+    for relative, descriptor in files.items():
+        path = event_dir / relative
+        if (
+            not isinstance(descriptor, dict)
+            or not path.is_file()
+            or path.is_symlink()
+            or descriptor.get("bytes") != path.stat().st_size
+            or descriptor.get("sha256") != sha256_file(path)
+        ):
+            raise OperatorError(f"container recovery sealed file mismatch: {relative}", EXIT_TAMPERED)
+    ledger_path = root / "container_recovery_ledger.jsonl"
+    if not ledger_path.is_file() or ledger_path.is_symlink() or ledger_path.stat().st_size > MAX_JSON_BYTES:
+        raise OperatorError("container recovery ledger is missing or unsafe", EXIT_TAMPERED)
+    previous = "0" * 64
+    sequence = 0
+    selected = None
+    for number, line in enumerate(ledger_path.read_text(encoding="utf-8").splitlines(), 1):
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise OperatorError(f"container recovery ledger JSON is invalid at line {number}", EXIT_TAMPERED) from exc
+        supplied = row.get("ledger_hash")
+        unsigned = dict(row)
+        unsigned.pop("ledger_hash", None)
+        calculated = hashlib.sha256(json.dumps(unsigned, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+        if row.get("sequence") != sequence + 1 or row.get("previous_ledger_hash") != previous or supplied != calculated:
+            raise OperatorError(f"container recovery ledger chain mismatch at line {number}", EXIT_TAMPERED)
+        sequence += 1
+        previous = supplied
+        if row.get("event_id") == latest.get("event_id"):
+            selected = row
+    if selected is None or selected.get("ledger_hash") != latest.get("ledger_hash") or selected.get("status") != latest.get("status"):
+        raise OperatorError("container recovery latest record is not anchored in its ledger", EXIT_TAMPERED)
+    return {"status": latest["status"], "event_id": latest["event_id"]}
 
 
 def verify_record(artifact_root: Path, run_id: str | None = None) -> dict[str, Any]:
@@ -468,12 +632,16 @@ def verify_record(artifact_root: Path, run_id: str | None = None) -> dict[str, A
         "manifest_sha256": sha256_file(manifest_path),
         "production_guard_pass": True,
         "execution_status": state_status,
+        "host_acl_recovery": recovery_status(artifact_root),
+        "host_container_recovery": container_recovery_status(artifact_root),
     }
 
 
 def print_bluf(mode: str, record: dict[str, Any]) -> None:
     if mode == "verify":
-        print(f"BLUF: VERIFIED run {record['run_id']} ({record['file_count']} retained files; production guard PASS).")
+        host = record.get("host_acl_recovery", {"status": "UNKNOWN"})
+        container = record.get("host_container_recovery", {"status": "UNKNOWN"})
+        print(f"BLUF: VERIFIED run {record['run_id']} ({record['file_count']} retained files; production guard PASS); host ACL recovery {host['status']}; container recovery {container['status']}.")
         return
     lineage = record["lineage"]
     disposition = "READY_FOR_HUMAN_REVIEW" if record["promotion"] == "HUMAN_REVIEW_PENDING" and record["review"] == "PASS" and not record["blockers"] else "BLOCKED"
@@ -482,6 +650,12 @@ def print_bluf(mode: str, record: dict[str, Any]) -> None:
     print(f"BLUF: {disposition}; run {record['run_id']}; execution {record['execution']}; review commit {commit}.")
     if blockers:
         print("Blockers: " + " | ".join(str(item) for item in blockers))
+    host = record.get("host_acl_recovery")
+    if isinstance(host, dict):
+        print(f"Host ACL recovery: {host.get('status')} (event {host.get('event_id') or 'none'}).")
+    container = record.get("host_container_recovery")
+    if isinstance(container, dict):
+        print(f"Host container recovery: {container.get('status')} (event {container.get('event_id') or 'none'}).")
     print("Next authorized action: " + ("HUMAN_REVIEW" if disposition == "READY_FOR_HUMAN_REVIEW" else "REMEDIATE"))
 
 
@@ -508,7 +682,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             record, code = review_record(args.artifact_root)
         else:
             record = verify_record(args.artifact_root, args.run_id)
-            code = EXIT_OK
+            code = EXIT_BLOCKED if (
+                record.get("host_acl_recovery", {}).get("status") == "RECOVERY_REQUIRED"
+                or record.get("host_container_recovery", {}).get("status") == "RECOVERY_REQUIRED"
+            ) else EXIT_OK
         if args.json:
             print(json.dumps(record, indent=2, sort_keys=True))
         else:

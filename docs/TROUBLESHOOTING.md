@@ -22,4 +22,12 @@ Exit `2` can mean a correctly completed but blocked run, a rejected/no-candidate
 
 InspectTerminal accepts only an immutable terminal run ID. A partial or killed run cannot continue in place. Preserve it, investigate runner/controller evidence, and start a fresh recovery run. If the local ledger is missing or disagrees, the operator fails closed because the same-machine tamper-evident chain is incomplete.
 
+`ACL recovery required` or an incomplete WAL: do not delete the lease root, edit its ACL, remove the WAL/helper archive, or bypass the kernel controller lock. Run `.\run_codex_improvement_monitor.bat -Mode Recover`. It acquires the lock, validates the fixed paths and lease-pinned helper hash, replays the WAL, and restores/verifies exact SDDL. It bypasses the normal clean-check only for recovery and never resumes candidate work. Every attempt is sealed and recovery-ledgered; `acl_recovery_latest.json` keeps a failed hazard prominent and blocks later Status/Review/Verify readiness and controller startup until a successful recovery supersedes it.
+
+`historical v2.1 sandbox canary failed`: retain the raw/guarded evidence for historical diagnosis, but do not use it to qualify the v2.2 candidate boundary. Current candidate qualification is the Docker preflight and native container canary below.
+
+Run `20260711T223022Z-1128b831` is expected to Verify nonzero because it failed before canary on CLI atomic-delete behavior and is absent from the local ledger. Preserve it as diagnostic evidence; do not manually append it, reseal it, or describe it as a successful DryRun.
+
+`v2.2 container preflight/canary failed`: verify a Linux/amd64 Docker engine, exact attested image, and authorization-bound host identity. Never build or pull during a run. Inspect for non-root, no network, read-only root, all capabilities dropped, one read-only workspace bind, and bounded `/tmp` and `/output` tmpfs. Any native socket, mount, host-read, or root-write success is a hard failure. `candidate export rejected` means unsafe/duplicate path, invalid base64, size/count excess, or SHA-256 mismatch; never copy candidate host paths directly. Recover removes/verifies containers before ACL recovery. Status/Review/Verify surface both hazards.
+
 `jsonschema is required for governed v2 validation`: install the repository requirements with the same interpreter configured in the launcher: `& $Python -m pip install -r .\requirements.txt`. Then rerun the full suite and DryRun; do not bypass schema validation.

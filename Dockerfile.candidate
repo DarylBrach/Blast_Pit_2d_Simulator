@@ -1,0 +1,24 @@
+FROM python@sha256:8a7e7cc04fd3e2bd787f7f24e22d5d119aa590d429b50c95dfe12b3abe52f48b
+
+LABEL org.opencontainers.image.title="Blast Pit governed candidate runtime" \
+      org.opencontainers.image.version="2.2.0" \
+      org.opencontainers.image.description="Offline non-root runtime for disposable Blast Pit candidate validation"
+
+ENV PYTHONNOUSERSITE=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONHASHSEED=0 \
+    PYGAME_HIDE_SUPPORT_PROMPT=1 \
+    SDL_VIDEODRIVER=dummy \
+    SDL_AUDIODRIVER=dummy
+
+COPY requirements-candidate.lock /tmp/requirements-candidate.lock
+RUN python -m pip install --disable-pip-version-check --no-cache-dir --no-deps --require-hashes \
+        -r /tmp/requirements-candidate.lock \
+    && python -m pip check \
+    && rm -f /tmp/requirements-candidate.lock \
+    && groupadd --gid 65532 candidate \
+    && useradd --uid 65532 --gid 65532 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin candidate
+
+WORKDIR /workspace
+USER 65532:65532
+CMD ["python", "--version"]

@@ -2,7 +2,7 @@
 
 ## BLUF
 
-`improvement_operator.py` is a read-only inspection tool for completed v2 evidence bundles. It can report status, determine whether a sealed decision is ready for human review, and verify retained evidence. It cannot start or resume the controller, modify evidence, approve promotion, run terminal audit, merge, push, or release anything.
+`improvement_operator.py` is a read-only inspection tool for completed v2.2 evidence bundles. It reports run disposition plus independent governed-container and ACL-recovery hazards. Publication requires verified container quiescence and exact-SDDL restoration. The operator cannot recover host state, start or resume the controller, modify evidence, approve promotion, run terminal audit, merge, push, or release anything.
 
 The supported v2 launcher is `run_codex_improvement_monitor.bat`. It selects separate controller, worktree, and runner evidence roots beside the protected checkout.
 
@@ -56,6 +56,8 @@ Exit `0` requires all of the following in the sealed decision:
 
 This means only “ready for a human to review.” A person must still decide whether to reject, request changes, or begin a separately authorized promotion workflow.
 
+The rubric contains ten dimensions worth ten points each. `10/10` is shorthand for all dimensions receiving full credit, hence 100/100; it is unrelated to the requested cycle count.
+
 ## Verify
 
 Verify the latest run:
@@ -107,6 +109,7 @@ These terminal conventions are emitted by the v2 controller and consumed by the 
 ```powershell
 .\run_codex_improvement_monitor.bat -Mode Run -Cycles 1
 .\run_codex_improvement_monitor.bat -Mode DryRun
+.\run_codex_improvement_monitor.bat -Mode Recover
 .\run_codex_improvement_monitor.bat -Mode Status -Json
 .\run_codex_improvement_monitor.bat -Mode Review
 .\run_codex_improvement_monitor.bat -Mode Verify -RunId <run-id>
@@ -116,8 +119,12 @@ These terminal conventions are emitted by the v2 controller and consumed by the 
 
 InspectTerminal is deliberately terminal-only: it verifies a sealed run and returns its review disposition. It cannot continue a partial run. Stop creates only `.supervisor_stop.codex-improvement-controller-v2`; retain killed evidence and start a new recovery run.
 
+Recover is not a read-only operator command. It acquires the controller kernel lock, removes and verifies absence of governed containers first, then restores persisted ACL leases. It cannot resume a partial run. Container and ACL recovery events are separately sealed and hash-chain ledgered; either latest hazard blocks readiness even when an older run bundle verifies. Use Status and Verify independently after recovery.
+
 The controller evidence root is `_codex_improvement_evidence_2d_Simulator`, candidate worktrees are `_codex_improvement_worktrees_2d_Simulator`, and supervisor evidence is `_codex_light_runner_evidence_2d_Simulator`, all beside the protected checkout.
+
+Run `20260711T223022Z-1128b831` is intentionally not a success example. It failed before canary on CLI atomic-delete behavior, retained unchanged-production diagnostic files, and was not anchored in the local ledger. Verify must therefore fail closed for that run. Final v2.2 suite totals, live container qualification, and successful DryRun evidence are pending.
 
 ## Security boundary
 
-Verification proves internal consistency of the retained files it checks; it is not a digital signature and does not prove the operating-system account was uncompromised. Scratch redirection is cooperative mitigation, not containment of explicit absolute-path writes. Use a disposable low-privilege account or VM when external-write containment is required.
+Verification proves internal consistency of retained files and local run, container-recovery, and ACL-recovery ledgers; it is not a digital signature and does not prove the Docker daemon, host kernel, or operating-system account was uncompromised. Use a dedicated host or VM when stronger host isolation is required.

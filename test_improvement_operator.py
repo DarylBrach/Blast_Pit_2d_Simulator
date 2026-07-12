@@ -222,8 +222,26 @@ def test_failed_and_nonready_execution_are_blocked(tmp_path):
 def test_json_cli_prints_exact_sealed_decision(tmp_path, capsys):
     root = fixture(tmp_path)
     expected = json.loads((root / "run-001" / "operator_decision.json").read_text())
+    expected["host_acl_recovery"] = {"status": "NO_RECOVERY_EVENTS", "event_id": None, "active_leases": []}
+    expected["host_container_recovery"] = {"status": "NO_RECOVERY_EVENTS", "event_id": None}
     assert operator.main(["review", "--artifact-root", str(root), "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == expected
+
+
+def test_container_recovery_required_blocks_status_review_and_verify(monkeypatch, tmp_path):
+    root = fixture(tmp_path)
+    monkeypatch.setattr(
+        operator,
+        "container_recovery_status",
+        lambda artifact_root: {"status": "RECOVERY_REQUIRED", "event_id": "recovery_fault"},
+    )
+    status, status_code = operator.status_record(root)
+    review, review_code = operator.review_record(root)
+    verified = operator.verify_record(root)
+    assert status_code == operator.EXIT_BLOCKED and review_code == operator.EXIT_BLOCKED
+    assert status["host_container_recovery"]["status"] == "RECOVERY_REQUIRED"
+    assert review["host_container_recovery"]["status"] == "RECOVERY_REQUIRED"
+    assert verified["host_container_recovery"]["status"] == "RECOVERY_REQUIRED"
 
 
 def test_ready_cross_field_authority_and_gate_invariants():

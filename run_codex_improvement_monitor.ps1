@@ -1,12 +1,13 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Run', 'DryRun', 'Status', 'Review', 'Verify', 'Stop', 'InspectTerminal')]
+    [ValidateSet('Run', 'DryRun', 'Recover', 'Status', 'Review', 'Verify', 'Stop', 'InspectTerminal')]
     [string]$Mode = 'Run',
     [ValidateRange(1, 10)][int]$Cycles = 1,
     [string]$RunId,
     [switch]$Json,
     [string]$Python = 'E:\Code\Python\VirtualEnvironments\Blast_Pit\Scripts\python.exe',
-    [string]$Codex = "$env:APPDATA\npm\codex.cmd"
+    [string]$Codex = "$env:APPDATA\npm\codex.cmd",
+    [string]$Docker = 'C:\Program Files\Docker\Docker\resources\bin\docker.exe'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -45,7 +46,7 @@ if ($Mode -eq 'Stop') {
         Write-Host "BLUF: stop is already requested for the v2 improvement controller."
     } else {
         New-Item -ItemType File -Path $KillSwitch -ErrorAction Stop | Out-Null
-        Write-Host "BLUF: stop requested. The supervisor will kill the controller process tree and retain KILLED evidence."
+        Write-Host "BLUF: stop requested. The supervisor will kill the Windows controller tree; any labeled Docker workload is recovered and absence-verified by the next Recover or Run."
     }
     Write-Host "Kill switch: $KillSwitch"
     Write-Host "Runner evidence: $RunnerEvidenceRoot"
@@ -55,9 +56,25 @@ if ($Mode -eq 'Stop') {
 
 Assert-Leaf $Python 'Python'
 Assert-Leaf $Codex 'Codex CLI'
+Assert-Leaf $Docker 'Docker CLI'
 Assert-Leaf $Controller 'v2 controller'
 Assert-Leaf $Authorization 'v2 authorization'
 Assert-Leaf $Evaluator 'v2 evaluator'
+
+if ($Mode -eq 'Recover') {
+    Write-Host "BLUF: acquiring the exclusive v2.2 controller lock, removing validated governed containers first, then restoring validated ACL leases; no candidate cycle will run."
+    & $Python $Controller `
+        '--repo' $ProjectRoot `
+        '--python' $Python `
+        '--codex' $Codex `
+        '--docker' $Docker `
+        '--authorization' $Authorization `
+        '--artifact-root' $EvidenceRoot `
+        '--worktree-root' $WorktreeRoot `
+        '--evaluator' $Evaluator `
+        '--recover-only'
+    exit $LASTEXITCODE
+}
 
 $Dirty = @(git status --porcelain=v1 --untracked-files=all)
 if ($LASTEXITCODE -ne 0 -or $Dirty.Count -ne 0) {
@@ -70,6 +87,7 @@ if ($Mode -eq 'InspectTerminal') {
         '--repo' $ProjectRoot `
         '--python' $Python `
         '--codex' $Codex `
+        '--docker' $Docker `
         '--authorization' $Authorization `
         '--artifact-root' $EvidenceRoot `
         '--worktree-root' $WorktreeRoot `
@@ -86,6 +104,7 @@ $ControllerArguments = @(
     '--repo', $ProjectRoot,
     '--python', $Python,
     '--codex', $Codex,
+    '--docker', $Docker,
     '--authorization', $Authorization,
     '--artifact-root', $EvidenceRoot,
     '--worktree-root', $WorktreeRoot,
@@ -118,9 +137,10 @@ $RunnerArguments = @(
     '--'
 ) + $ControllerArguments
 
-Write-Host "BLUF: starting governed v2 $Mode; up to $Cycles cumulative cycle(s); eight-hour supervisor cap; no push, merge, promotion, audit, export, or release authority."
+Write-Host "BLUF: starting governed v2.2 $Mode with the authorization-bound Docker candidate boundary; up to $Cycles cumulative cycle(s); eight-hour supervisor cap; no push, merge, promotion, audit, export, or release authority."
 Write-Host "Controller evidence: $EvidenceRoot"
 Write-Host "Candidate worktrees: $WorktreeRoot"
 Write-Host "Runner evidence: $RunnerEvidenceRoot"
+Write-Host "Docker CLI: $Docker (the controller verifies the exact approved Linux image and never pulls or builds during a run)"
 & $Python @RunnerArguments
 exit $LASTEXITCODE

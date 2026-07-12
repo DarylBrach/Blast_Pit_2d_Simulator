@@ -1,5 +1,13 @@
 # Changelog
 
+- Replaced the v2.1 Python audit-hook candidate boundary with controller v2.2's authorization-bound Linux Docker boundary. Compile, tests, training, and trusted scoring use immutable image `sha256:ebecafb90288df12553cb8b66e0bc2a3ce325513a19f65e40e5ce9e526db0698`, tied to `candidate_image_attestation_v1.json` and the hash-locked image recipe.
+- Made the single disposable-workspace bind read-only. Candidate writes are limited to bounded 256 MiB `/tmp` and `/output` tmpfs mounts. Training artifacts return only through the trusted bounded stdout exporter, which validates safe relative paths, per-file SHA-256, and base64 before materialization.
+- Added durable governed-container lifecycle evidence and container-first recovery before ACL recovery. The Windows audit guard remains defense in depth only. Final v2.2 test totals and supported DryRun qualification are pending.
+
+- Hardened the improvement harness to controller v2.1 with a child-only inheritance-only `DELETE` ACL lease, exact multiset restricted-SID discovery, durable `APPLYING` write-ahead state, a kernel controller lock, startup and emergency lease recovery, a per-lease hash-pinned recovery-helper archive, separately sealed/hash-chain-ledgered recovery events, and exact SDDL restoration before production guard, sealing, or publication.
+- Added a candidate Python audit guard that denies socket/process operations, external reads/writes, and path mutations outside candidate roots; the complete gate now combines the trusted protected-harness suite with the guarded complete v37 candidate tests. Expanded the raw filesystem canary with lease-root delete, `WRITE_DAC`, `WRITE_OWNER`, rename, hardlink, and symlink probes, while separately recording raw OS network capability and effective guard denial without conflating them.
+- Retained first live run `20260711T223022Z-1128b831` as unanchored diagnostic failure evidence: it failed closed before canary on CLI atomic-delete behavior and did not modify production. Current v2.2 suite totals and supported DryRun qualification remain pending.
+
 - Added the governed v2 tool-less improvement harness with seven independent specialist roles, final QA, paired private Fold B and held-out Fold C evaluation, qualified unelevated Windows sandboxing, kill-on-close Job Objects, transition/cycle/run manifests, and a local tamper-evident ledger.
 - Added supported Run, DryRun, Status, Review, Verify, Stop, and terminal-only InspectTerminal launcher modes with an eight-hour outer supervisor cap.
 - Added strict read-only operator decisions: execution success is separate from human-review readiness, and promotion/release authority is always false.

@@ -2,7 +2,7 @@
 
 ## BLUF
 
-`run_codex_improvement_monitor.bat` launches `CodexLightRunner_v3.py`, which supervises `CodexImprovementController_v2.py`. Every model role is tool-less and returns schema-validated JSON. The controller alone may validate and apply a bounded patch to a disposable candidate worktree, then run sandboxed tests and development evaluation. Seven specialist roles and independent final QA review each surviving candidate.
+`run_codex_improvement_monitor.bat` launches `CodexLightRunner_v3.py`, which supervises controller v2.2 in `CodexImprovementController_v2.py`. Every model role is tool-less and returns schema-validated JSON. The controller alone may apply a bounded patch through the Windows write boundary; every candidate-controlled compile, test, training, and trusted-scoring command runs in the authorization-bound Linux container. Seven specialist roles and independent final QA review each surviving candidate.
 
 It does not edit the protected checkout, reuse terminal audit seeds, modify the completed `robustness-v37-8h-001` evidence, push branches, merge changes, run terminal audit, export, promote, or release a policy. A sealed 100/100 decision means ready for human review only.
 
@@ -102,6 +102,7 @@ The supported Windows entrypoint is `run_codex_improvement_monitor.bat`. Control
 
 ```powershell
 .\run_codex_improvement_monitor.bat -Mode DryRun
+.\run_codex_improvement_monitor.bat -Mode Recover
 .\run_codex_improvement_monitor.bat -Mode Run -Cycles 1
 .\run_codex_improvement_monitor.bat -Mode Status
 .\run_codex_improvement_monitor.bat -Mode Review
@@ -113,5 +114,19 @@ The supported Windows entrypoint is `run_codex_improvement_monitor.bat`. Control
 Run and DryRun use a 28,200-second controller budget inside the supervisor's absolute 28,800-second limit. `-Cycles 10` means attempt up to ten cumulative cycles before the shared deadline. A cycle may be accepted, rejected, time out, or fail; it is not a simulator version increment and does not imply v37 through v47.
 
 Builders and remediators are tool-less and return schema-validated, bounded unified patches; the controller applies an accepted patch inside the allowlisted sandbox. Seven specialist roles and final QA are also tool-less evidence reviewers. Candidate testing uses the sandbox, paired private Fold B screens cycle changes, and held-out Fold C supports final root adjudication. A 100/100 sealed decision means ready for human review only. It never authorizes merge, push, production training, terminal audit, export, promotion, or release.
+
+### v2.2 containment and recovery
+
+Each candidate cycle owns a disposable ACL lease root. The controller snapshots its exact SDDL, discovers the restricted SID by exact access-rule multiset difference, durably records `APPLYING`, and grants that SID only inheritance-only `DELETE` on descendants. The lease root itself remains non-deletable, and `WRITE_DAC` and `WRITE_OWNER` remain denied. A kernel controller lock prevents concurrent startup or recovery. The exact authorization-bound helper is copied to a non-candidate-writable, hash-named sibling before ACL mutation, so later source upgrades cannot strand the WAL. Exact SDDL restoration and verification must finish before the production guard, run seal, or publication. Every recovery attempt also receives its own decision, manifest, hash-chain ledger entry, and latest hazard pointer.
+
+The Windows sandbox and audit guard are defense in depth for trusted host orchestration, not the candidate hard boundary. Every candidate-controlled command executes in immutable attested Linux image `sha256:ebecafb90288df12553cb8b66e0bc2a3ce325513a19f65e40e5ce9e526db0698`. `candidate_image_attestation_v1.json` records the image build inputs and package SBOM; the authorization separately hash-binds the attestation, exact runtime policy, canary, controller, and launch surfaces. Governed runs never build, pull, or substitute an image.
+
+The container has no network, runs non-root with a read-only root filesystem, drops every capability, and receives exactly one host bind: the disposable workspace mounted read-only. Writable `/tmp` and `/output` are bounded 256 MiB tmpfs mounts. Training output leaves `/output` only through a trusted bounded stdout exporter; each safe relative path, size, SHA-256, and base64 payload is validated before host materialization. The full gate combines the trusted protected-harness suite with the containerized complete v37 candidate tests.
+
+`-Cycles 10` means at most ten attempts under the shared deadline. `10/10` means ten rubric dimensions at 10 points each, or 100/100; it does not mean ten cycles or ten accepted improvements, and it grants human-review readiness only.
+
+First live run `20260711T223022Z-1128b831` failed closed before canary because CLI atomic-delete behavior exceeded the earlier ACL policy. Production was unchanged, but the run was not anchored in the local ledger and is diagnostic evidence only. Final v2.2 suite totals, live container qualification, and a successful clean-tree supported DryRun are pending validation.
+
+`-Mode Recover` acquires the kernel controller lock, validates fixed paths and bound identities, removes and verifies absence of governed candidate containers first, then performs strict persisted ACL-lease recovery. It bypasses the normal clean-check solely because it cannot run candidates or change source. Container and ACL recovery attempts have separate sealed/ledgered decisions and latest hazard pointers. Recover does not resume a partial run; use Status or Verify for evidence disposition.
 
 InspectTerminal verifies an already terminal immutable run. It does not resume partial work. A killed, timed-out, or partial run must be retained and followed by a fresh recovery run. Status/Review/Verify are read-only and use the operator contract documented in [CODEX_IMPROVEMENT_OPERATOR_V2.md](CODEX_IMPROVEMENT_OPERATOR_V2.md).

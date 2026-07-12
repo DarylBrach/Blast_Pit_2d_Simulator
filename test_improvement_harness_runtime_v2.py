@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import sys
@@ -196,6 +197,8 @@ def test_sandbox_config_is_unelevated_network_denied_and_exact_roots(tmp_path):
     second.mkdir()
     text = runtime.sandbox_config_text("candidate", [first, second])
     assert 'sandbox = "unelevated"' in text and "enabled = false" in text
+    assert "[permissions.candidate.workspace_roots]" not in text
+    assert 'extends = ":workspace"' not in text
     assert str(first).replace("\\", "\\\\") in text
     with pytest.raises(runtime.RuntimeFailure, match="unelevated"):
         runtime.sandbox_config_text("candidate", [first], "elevated")
@@ -212,14 +215,16 @@ def test_candidate_sandbox_requires_precreated_write_roots(tmp_path):
 
 
 def test_canary_wrapper_rejects_forged_minimal_pass(monkeypatch, tmp_path):
-    scratch = tmp_path / "scratch"
     allowed = tmp_path / "allowed"
+    scratch = allowed / "scratch"
     forbidden = tmp_path / "forbidden"
     evidence = tmp_path / "evidence"
-    for path in (scratch, allowed, forbidden, evidence):
+    for path in (allowed, forbidden, evidence):
         path.mkdir()
+    scratch.mkdir()
     canary = tmp_path / "canary.py"
     canary.write_text("# trusted fixture", encoding="utf-8")
+    (tmp_path / "improvement_candidate_guard.py").write_text("# trusted guard fixture", encoding="utf-8")
 
     def fake(**kwargs):
         return runtime.ProcessResult([], str(tmp_path), 0, '{"schema_version":"blast-pit.sandbox-canary.v1","pass":true}\n', "")
@@ -232,7 +237,7 @@ def test_canary_wrapper_rejects_forged_minimal_pass(monkeypatch, tmp_path):
             canary_source=canary,
             profile="candidate",
             cwd=allowed,
-            allowed=[allowed, scratch],
+            allowed=[allowed],
             forbidden=[forbidden],
             timeout=10,
             environment={},
@@ -255,3 +260,160 @@ def test_run_process_enforces_output_bound_and_job_kills_descendants(monkeypatch
         runtime.run_process([sys.executable, "-c", child, grandchild, str(marker)], tmp_path, 1)
     time.sleep(3.5)
     assert not marker.exists()
+
+
+def test_controller_lock_is_kernel_exclusive_and_stale_path_is_reusable(tmp_path):
+    path = tmp_path / "controller.lock"
+    path.write_text("stale metadata", encoding="utf-8")
+    with runtime.ControllerLock(path, {"controller_pid": os.getpid()}):
+        with pytest.raises(runtime.RuntimeFailure, match="another governed controller"):
+            with runtime.ControllerLock(path, {"controller_pid": os.getpid() + 1}):
+                pass
+    with runtime.ControllerLock(path, {"controller_pid": os.getpid()}):
+        pass
+    assert json.loads(path.read_text(encoding="utf-8"))["schema_version"] == "blast-pit.controller-lock.v1"
+
+
+def test_copy_strict_tree_hashes_and_rejects_existing_destination(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "nested").mkdir()
+    (source / "nested" / "evidence.json").write_text('{"pass":true}\n', encoding="utf-8")
+    destination = tmp_path / "retained"
+    manifest = runtime.copy_strict_tree(source, destination)
+    assert manifest == runtime.strict_manifest(destination)
+    with pytest.raises(runtime.RuntimeFailure, match="already exists"):
+        runtime.copy_strict_tree(source, destination)
+
+
+def _lease_fixture(tmp_path: Path, state: str = "ACTIVE"):
+    worktree_root = tmp_path / "worktrees"
+    workspace = worktree_root / "20260711T000000Z-abcdef12"
+    root = workspace / "cycle_001_candidate_lease"
+    control = workspace / ".recovery-control"
+    evidence = tmp_path / "evidence"
+    root.mkdir(parents=True)
+    evidence.mkdir()
+    helper = tmp_path / "helper.ps1"
+    helper.write_text("# fixed helper\n", encoding="utf-8")
+    helper_sha256 = runtime.legacy.sha256_file(helper)
+    recovery_helper = workspace / f".acl-recovery-helper-{helper_sha256}.ps1"
+    recovery_helper.write_bytes(helper.read_bytes())
+    sddl = "D:"
+    record = {
+        "schema_version": runtime.ACL_LEASE_SCHEMA,
+        "lease_id": "lease-id",
+        "state": state,
+        "root": str(root.resolve()),
+        "authorized_parent": str(workspace.resolve()),
+        "root_identity": runtime.directory_identity(root),
+        "helper_path": str(helper.resolve()),
+        "helper_sha256": helper_sha256,
+        "recovery_helper_path": str(recovery_helper.resolve()),
+        "recovery_helper_sha256": helper_sha256,
+        "authorization_sha256": "a" * 64,
+        "controller_pid": os.getpid(),
+        "worktree_path": str(root.resolve() / "worktree"),
+        "control_dir": str(workspace / "original-control"),
+        "evidence_dir": str(evidence),
+        "snapshot": {
+            "schema_version": "blast-pit.acl-root-snapshot.v1",
+            "root": str(root.resolve()),
+            "authorized_parent": str(workspace.resolve()),
+            "sddl": sddl,
+            "sddl_sha256": hashlib.sha256(sddl.encode()).hexdigest(),
+            "owner": "owner",
+            "group": "group",
+            "access_rules_protected": False,
+            "rules": [],
+        },
+        "restricted_sid": "S-1-5-21-1-2-3-4",
+        "history": [{"state": state, "recorded_at": "2026-07-11T00:00:00Z"}],
+    }
+    lease_path = workspace / "acl_lease_cycle_001.json"
+    runtime.atomic_json(lease_path, record)
+    return worktree_root, workspace, root, control, evidence, helper, lease_path, record
+
+
+def test_acl_lease_loader_binds_path_helper_snapshot_and_root_identity(tmp_path):
+    worktree_root, _, root, control, evidence, helper, lease_path, _ = _lease_fixture(tmp_path)
+    loaded = runtime.load_acl_lease(
+        lease_path,
+        worktree_root=worktree_root,
+        helper=helper,
+        recovery_control_dir=control,
+        recovery_evidence_dir=evidence,
+    )
+    assert loaded.root == root.resolve() and loaded.record["state"] == "ACTIVE"
+    helper.write_text("# upgraded current helper\n", encoding="utf-8")
+    archived = runtime.load_acl_lease(
+        lease_path,
+        worktree_root=worktree_root,
+        helper=helper,
+        recovery_control_dir=control,
+        recovery_evidence_dir=evidence,
+    )
+    assert archived.helper != helper.resolve() and runtime.legacy.sha256_file(archived.helper) == loaded.record["helper_sha256"]
+    root.rmdir(); root.mkdir()
+    with pytest.raises(runtime.RuntimeFailure, match="identity changed"):
+        runtime.load_acl_lease(
+            lease_path,
+            worktree_root=worktree_root,
+            helper=helper,
+            recovery_control_dir=control,
+            recovery_evidence_dir=evidence,
+        )
+
+
+def test_acl_setup_registers_before_mutation_and_unregisters_after_recovery(monkeypatch, tmp_path):
+    workspace = tmp_path / "workspace"; root = workspace / "cycle_001_candidate_lease"
+    control = workspace / "control"; evidence = tmp_path / "evidence"
+    root.mkdir(parents=True); control.mkdir(); helper = tmp_path / "helper.ps1"; helper.write_text("# helper")
+    canary = tmp_path / "canary.py"; canary.write_text("# canary")
+    snapshot = {"root": str(root.resolve()), "authorized_parent": str(workspace.resolve()), "sddl": "D:", "sddl_sha256": hashlib.sha256(b"D:").hexdigest()}
+
+    def helper_call(lease, operation, timeout):
+        return {"operation": operation, "snapshot": snapshot, "restricted_sid": None, "pass": True}
+
+    monkeypatch.setattr(runtime, "_invoke_acl_helper", helper_call)
+    monkeypatch.setattr(runtime, "run_sandboxed", lambda **kwargs: (_ for _ in ()).throw(runtime.RuntimeFailure("materialize fault")))
+    registry = []
+    with pytest.raises(runtime.RuntimeFailure, match="materialize fault"):
+        runtime.start_candidate_acl_lease(
+            lease_path=workspace / "acl_lease_cycle_001.json", root=root, authorized_parent=workspace,
+            helper=helper, control_dir=control, evidence_dir=evidence, authorization_sha256="a" * 64,
+            worktree_path=root / "worktree", codex=tmp_path / "codex.cmd", python=Path(sys.executable),
+            profile="candidate", environment={}, canary_source=canary, forbidden=[tmp_path / "forbidden"],
+            timeout=10, token="lease", registry=registry,
+        )
+    assert registry == []
+
+
+def test_acl_setup_mutation_fault_with_failed_restore_remains_registered(monkeypatch, tmp_path):
+    workspace = tmp_path / "workspace"; root = workspace / "cycle_001_candidate_lease"
+    control = workspace / "control"; evidence = tmp_path / "evidence"
+    root.mkdir(parents=True); control.mkdir(); helper = tmp_path / "helper.ps1"; helper.write_text("# helper")
+    canary = tmp_path / "canary.py"; canary.write_text("# canary")
+    snapshot = {"root": str(root.resolve()), "authorized_parent": str(workspace.resolve()), "sddl": "D:", "sddl_sha256": hashlib.sha256(b"D:").hexdigest()}
+
+    def helper_call(lease, operation, timeout):
+        if operation == "snapshot":
+            return {"snapshot": snapshot}
+        if operation == "discover":
+            return {"restricted_sid": "S-1-5-21-1-2-3-4", "materialized_delta": [{}]}
+        if operation == "upgrade":
+            raise runtime.RuntimeFailure("post-mutation fault")
+        raise runtime.RuntimeFailure("restore fault")
+
+    monkeypatch.setattr(runtime, "_invoke_acl_helper", helper_call)
+    monkeypatch.setattr(runtime, "run_sandboxed", lambda **kwargs: runtime.ProcessResult([], str(root), 0, "", ""))
+    registry = []
+    with pytest.raises(runtime.RuntimeFailure, match="restoration is required"):
+        runtime.start_candidate_acl_lease(
+            lease_path=workspace / "acl_lease_cycle_001.json", root=root, authorized_parent=workspace,
+            helper=helper, control_dir=control, evidence_dir=evidence, authorization_sha256="a" * 64,
+            worktree_path=root / "worktree", codex=tmp_path / "codex.cmd", python=Path(sys.executable),
+            profile="candidate", environment={}, canary_source=canary, forbidden=[tmp_path / "forbidden"],
+            timeout=10, token="lease", registry=registry,
+        )
+    assert len(registry) == 1 and registry[0].record["state"] == "RECOVERY_REQUIRED"

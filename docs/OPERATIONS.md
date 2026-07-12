@@ -47,6 +47,7 @@ From the repository root, use the Windows batch wrapper:
 
 ```powershell
 .\run_codex_improvement_monitor.bat -Mode DryRun
+.\run_codex_improvement_monitor.bat -Mode Recover
 .\run_codex_improvement_monitor.bat -Mode Run -Cycles 1
 .\run_codex_improvement_monitor.bat -Mode Status
 .\run_codex_improvement_monitor.bat -Mode Review -Json
@@ -56,5 +57,17 @@ From the repository root, use the Windows batch wrapper:
 ```
 
 Run uses a 28,200-second controller budget and 28,800-second supervisor ceiling. Increase `-Cycles` only after reviewing prior evidence; values 1–10 are cumulative attempts, not version numbers or guaranteed accepted improvements. InspectTerminal verifies terminal evidence only and never resumes partial work.
+
+Controller v2.1 holds a kernel controller lock across startup recovery and execution. On startup it replays any incomplete ACL WAL and requires exact-SDDL restoration before permitting new candidate work. Do not manually remove a lease root, alter its ACL, edit its WAL, or confuse the kernel lock with the scoped stop file. A killed candidate run is not resumed; ACL recovery restores host state, after which a fresh governed run is required.
+
+Recover acquires the same kernel lock, validates fixed paths and the per-lease archived helper hash, and strictly replays persisted ACL recovery before returning. It intentionally bypasses the normal clean-check because it cannot run a candidate or change source. It cannot continue a partial run. When a lease is present it creates a separate recovery decision/manifest, appends the recovery hash-chain ledger, updates `acl_recovery_latest.json`, and then removes the recovered disposable workspace. Status/Review/Verify surface an unresolved `RECOVERY_REQUIRED` pointer independently of the latest candidate run.
+
+Historical v2.1 used a Windows audit guard and raw-versus-guarded canary. That mechanism is defense in depth only under v2.2 and is not the candidate hard boundary.
+
+Ten cycles means up to ten attempts before the deadline. `10/10` means ten full-credit rubric dimensions totaling 100/100 and only readiness for human review. Final v2.2 totals and a successful clean-tree supported DryRun remain pending. First live run `20260711T223022Z-1128b831` is an unanchored failed diagnostic run, not an operational success record.
+
+## Controller v2.2 Docker operation
+
+The v2.1 audit-guard/count statements above are historical. Before Run/DryRun, Docker host identity, `candidate_image_attestation_v1.json`, the hash-locked recipe, and image `sha256:ebecafb90288df12553cb8b66e0bc2a3ce325513a19f65e40e5ce9e526db0698` must match authorization. Builds are reviewed maintenance; runs use pull-never. Compile/tests/train/trusted score are containerized with a read-only workspace, bounded 256 MiB `/tmp` and `/output`, and trusted stdout export only. Recover removes/verifies containers first, then restores ACL leases. Final v2.2 totals and successful DryRun remain pending.
 
 Operator exits: `0` verified/review-ready (or successful DryRun), `1` missing or ambiguous selection, `2` blocked/incomplete/controller failure, `3` tampered or inconsistent evidence, and `130` interrupted controller execution. Human review pending never authorizes push, merge, training, audit, promotion, export, or release.
