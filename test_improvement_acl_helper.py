@@ -46,7 +46,14 @@ def windows_acl_capability(tmp_path: Path) -> None:
         "Import-Module Microsoft.PowerShell.Security -ErrorAction Stop; "
         "$null = Get-Command Get-Acl -ErrorAction Stop; "
         "$null = Get-Command Set-Acl -ErrorAction Stop; "
-        "$null = Get-Acl -LiteralPath $env:ACL_PROBE_PATH -ErrorAction Stop; "
+        "$sections = [System.Security.AccessControl.AccessControlSections]'Access, Owner, Group'; "
+        "$acl = Get-Acl -LiteralPath $env:ACL_PROBE_PATH -ErrorAction Stop; "
+        "$before = $acl.GetSecurityDescriptorSddlForm($sections); "
+        "$acl.SetSecurityDescriptorSddlForm($before, $sections); "
+        "Set-Acl -LiteralPath $env:ACL_PROBE_PATH -AclObject $acl -ErrorAction Stop; "
+        "$afterAcl = Get-Acl -LiteralPath $env:ACL_PROBE_PATH -ErrorAction Stop; "
+        "$after = $afterAcl.GetSecurityDescriptorSddlForm($sections); "
+        "if ($after -cne $before) { throw 'exact SDDL round trip is unavailable' }; "
         "Write-Output 'PASS'"
     )
     completed = subprocess.run(

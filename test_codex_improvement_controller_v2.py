@@ -281,6 +281,11 @@ def shipped_authorization_config() -> v2.Config:
 def test_shipped_v2_authorization_statically_binds_every_control_cli_role_and_root(monkeypatch):
     cfg = shipped_authorization_config()
     shipped = v2.strict_json(cfg.authorization, max_bytes=128_000)
+    cfg = replace(
+        cfg,
+        artifact_root=Path(str(shipped["artifact_root"])),
+        worktree_root=Path(str(shipped["worktree_root"])),
+    )
     real_sha256_file = v2.legacy.sha256_file
     executable_hash_calls: set[str] = set()
     docker_identity_calls: list[dict[str, object]] = []
@@ -311,6 +316,10 @@ def test_shipped_v2_authorization_statically_binds_every_control_cli_role_and_ro
     assert cli_version == "codex-cli 0.128.0"
     assert authorization_hash == v2.legacy.canonical_text_sha256(cfg.authorization)
     assert all(record[key] == value for key, value in v2.expected_control_hashes(cfg).items())
+    assert cfg.artifact_root.is_absolute() and cfg.worktree_root.is_absolute()
+    assert cfg.artifact_root != cfg.worktree_root
+    assert record["artifact_root"] == str(cfg.artifact_root)
+    assert record["worktree_root"] == str(cfg.worktree_root)
     assert executable_hash_calls == {"codex", "docker"}
     assert len(docker_identity_calls) == 1 and docker_identity_calls[0]["docker"] == cfg.docker
 
