@@ -18,6 +18,16 @@ import CodexImprovementController_v2 as v2
 REPO = Path(v2.__file__).resolve().parent
 
 
+def strict_crlf_transport_sha256(path: Path) -> str:
+    """Permit only Git's CRLF transport conversion, never BOM or bare-CR drift."""
+    data = path.read_bytes()
+    if data.startswith(b"\xef\xbb\xbf"):
+        raise AssertionError(f"UTF-8 BOM is not an authorized checkout transformation: {path.name}")
+    if b"\r" in data.replace(b"\r\n", b""):
+        raise AssertionError(f"bare carriage return is not an authorized checkout transformation: {path.name}")
+    return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
+
+
 def config(repo: Path = REPO) -> v2.Config:
     return v2.Config(
         repo=repo,
@@ -278,6 +288,21 @@ def shipped_authorization_config() -> v2.Config:
     )
 
 
+def test_strict_crlf_transport_hash_rejects_bom_and_bare_cr(tmp_path):
+    path = tmp_path / "input.txt"
+    expected = hashlib.sha256(b"first\nsecond\n").hexdigest()
+    path.write_bytes(b"first\nsecond\n")
+    assert strict_crlf_transport_sha256(path) == expected
+    path.write_bytes(b"first\r\nsecond\r\n")
+    assert strict_crlf_transport_sha256(path) == expected
+    path.write_bytes(b"\xef\xbb\xbffirst\r\nsecond\r\n")
+    with pytest.raises(AssertionError, match="BOM"):
+        strict_crlf_transport_sha256(path)
+    path.write_bytes(b"first\rsecond\n")
+    with pytest.raises(AssertionError, match="bare carriage return"):
+        strict_crlf_transport_sha256(path)
+
+
 def test_shipped_v2_authorization_statically_binds_every_control_cli_role_and_root(monkeypatch):
     cfg = shipped_authorization_config()
     shipped = v2.strict_json(cfg.authorization, max_bytes=128_000)
@@ -286,8 +311,23 @@ def test_shipped_v2_authorization_statically_binds_every_control_cli_role_and_ro
         artifact_root=Path(str(shipped["artifact_root"])),
         worktree_root=Path(str(shipped["worktree_root"])),
     )
+    attestation = v2.strict_json(cfg.repo / "candidate_image_attestation_v1.json", max_bytes=256_000)
+    attested_build_inputs = attestation["build_inputs"]
+    expected_build_input_names = {
+        "Dockerfile.candidate",
+        "Dockerfile.candidate.dockerignore",
+        "requirements-candidate.lock",
+        "build_candidate_container.ps1",
+    }
+    assert set(attested_build_inputs) == expected_build_input_names
+    assert all(
+        strict_crlf_transport_sha256(cfg.repo / name) == expected
+        for name, expected in attested_build_inputs.items()
+    )
+    build_input_paths = {cfg.repo / name: name for name in expected_build_input_names}
     real_sha256_file = v2.legacy.sha256_file
     executable_hash_calls: set[str] = set()
+    build_input_hash_calls: set[str] = set()
     docker_identity_calls: list[dict[str, object]] = []
 
     def authorized_executable_hash(path: Path) -> str:
@@ -298,6 +338,10 @@ def test_shipped_v2_authorization_statically_binds_every_control_cli_role_and_ro
         if candidate == cfg.docker:
             executable_hash_calls.add("docker")
             return str(shipped["docker_executable_sha256"])
+        if candidate in build_input_paths:
+            name = build_input_paths[candidate]
+            build_input_hash_calls.add(name)
+            return str(attested_build_inputs[name])
         return real_sha256_file(candidate)
 
     def authorized_docker_identity(**kwargs: object) -> dict[str, object]:
@@ -321,6 +365,7 @@ def test_shipped_v2_authorization_statically_binds_every_control_cli_role_and_ro
     assert record["artifact_root"] == str(cfg.artifact_root)
     assert record["worktree_root"] == str(cfg.worktree_root)
     assert executable_hash_calls == {"codex", "docker"}
+    assert build_input_hash_calls == expected_build_input_names
     assert len(docker_identity_calls) == 1 and docker_identity_calls[0]["docker"] == cfg.docker
 
 
