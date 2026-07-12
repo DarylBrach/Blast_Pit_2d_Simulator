@@ -19,18 +19,12 @@ def acl_environment(temp: Path) -> dict[str, str]:
     return runtime._minimal_environment(temp)
 
 
-def invoke(contract_path: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+def invoke(contract_path: Path) -> runtime.ProcessResult:
+    return runtime.run_process(
         [POWERSHELL, "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", HELPER, "-Contract", contract_path],
-        cwd=contract_path.parent,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=30,
-        check=False,
-        env=acl_environment(contract_path.parent),
+        contract_path.parent,
+        120,
+        environment=acl_environment(contract_path.parent),
     )
 
 
@@ -96,7 +90,7 @@ def test_acl_helper_snapshot_and_idempotent_exact_restore(tmp_path, windows_acl_
     }
     path = control / "snapshot.json"; path.write_text(json.dumps(contract), encoding="utf-8")
     result = invoke(path)
-    assert result.returncode == 0, result.stderr
+    assert result.return_code == 0, result.stderr
     snapshot = json.loads(result.stdout)
     assert set(snapshot) == {"schema_version", "operation", "lease_id", "pass", "snapshot", "restricted_sid"}
     assert snapshot["pass"] is True and snapshot["snapshot"]["root"] == str(root)
@@ -104,7 +98,7 @@ def test_acl_helper_snapshot_and_idempotent_exact_restore(tmp_path, windows_acl_
     contract.update({"operation": "restore", "snapshot": snapshot["snapshot"]})
     restore_path = control / "restore.json"; restore_path.write_text(json.dumps(contract), encoding="utf-8")
     restored = invoke(restore_path)
-    assert restored.returncode == 0, restored.stderr
+    assert restored.return_code == 0, restored.stderr
     assert json.loads(restored.stdout)["snapshot"]["sddl"] == snapshot["snapshot"]["sddl"]
 
 
@@ -124,7 +118,7 @@ def test_acl_helper_rejects_contract_outside_declared_control_directory(tmp_path
     }
     path = control / "snapshot.json"; path.write_text(json.dumps(contract), encoding="utf-8")
     result = invoke(path)
-    assert result.returncode != 0 and "outside the fixed control directory" in result.stderr
+    assert result.return_code != 0 and "outside the fixed control directory" in result.stderr
 
 
 def test_acl_helper_source_contains_only_child_delete_upgrade_policy():

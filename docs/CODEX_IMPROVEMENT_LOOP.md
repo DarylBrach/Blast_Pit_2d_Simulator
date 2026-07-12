@@ -125,7 +125,7 @@ The container has no network, runs non-root with a read-only root filesystem, dr
 
 `-Cycles 10` means at most ten attempts under the shared deadline. `10/10` means ten rubric dimensions at 10 points each, or 100/100; it does not mean ten cycles or ten accepted improvements, and it grants human-review readiness only.
 
-First live run `20260711T223022Z-1128b831` and pre-v3.1 DryRun `20260712T005807Z-709f67a4` remain historical evidence. Current local qualification is 242 passed/3 skipped in 70.73 seconds; governed-host live binding separately passes 1/1. Current supported DryRun is runner `20260712T014740Z-04461e70` / controller `20260712T014742Z-2a8b7152`.
+First live run `20260711T223022Z-1128b831` and pre-v3.1 DryRun `20260712T005807Z-709f67a4` remain historical evidence. Current local qualification is 242 passed/3 skipped in 55.26 seconds; governed-host live binding separately passes 1/1. Current supported DryRun is runner `20260712T014740Z-04461e70` / controller `20260712T014742Z-2a8b7152`.
 
 `-Mode Recover` acquires the kernel controller lock, validates fixed paths and bound identities, removes and verifies absence of governed candidate containers first, then performs strict persisted ACL-lease recovery. It bypasses the normal clean-check solely because it cannot run candidates or change source. Container and ACL recovery attempts have separate sealed/ledgered decisions and latest hazard pointers. Recover does not resume a partial run; use Status or Verify for evidence disposition.
 
