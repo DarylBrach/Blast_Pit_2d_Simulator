@@ -7,10 +7,16 @@ from pathlib import Path
 
 import pytest
 
+import improvement_harness_runtime_v2 as runtime
+
 
 REPO = Path(__file__).resolve().parent
 HELPER = REPO / "improvement_acl_helper.ps1"
 POWERSHELL = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+
+
+def acl_environment(temp: Path) -> dict[str, str]:
+    return runtime._minimal_environment(temp)
 
 
 def invoke(contract_path: Path) -> subprocess.CompletedProcess[str]:
@@ -24,11 +30,51 @@ def invoke(contract_path: Path) -> subprocess.CompletedProcess[str]:
         stderr=subprocess.PIPE,
         timeout=30,
         check=False,
+        env=acl_environment(contract_path.parent),
     )
 
 
+@pytest.fixture
+def windows_acl_capability(tmp_path: Path) -> None:
+    if os.name != "nt" or not POWERSHELL.is_file():
+        pytest.skip("Windows PowerShell ACL facilities are unavailable")
+    probe = tmp_path / "acl-capability-probe"
+    probe.mkdir()
+    environment = acl_environment(tmp_path)
+    environment["ACL_PROBE_PATH"] = str(probe)
+    script = (
+        "Import-Module Microsoft.PowerShell.Security -ErrorAction Stop; "
+        "$null = Get-Command Get-Acl -ErrorAction Stop; "
+        "$null = Get-Command Set-Acl -ErrorAction Stop; "
+        "$null = Get-Acl -LiteralPath $env:ACL_PROBE_PATH -ErrorAction Stop; "
+        "Write-Output 'PASS'"
+    )
+    completed = subprocess.run(
+        [POWERSHELL, "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+        cwd=tmp_path,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=30,
+        check=False,
+        env=environment,
+    )
+    if completed.returncode != 0 or completed.stdout.strip() != "PASS":
+        reason = " ".join((completed.stderr or completed.stdout or "unknown capability failure").split())[:500]
+        pytest.skip(f"native Windows ACL capability unavailable: {reason}")
+
+
+def test_acl_helper_environment_excludes_inherited_powershell_module_path(monkeypatch, tmp_path):
+    monkeypatch.setenv("PSModulePath", "C:\\untrusted-pwsh-modules")
+    environment = acl_environment(tmp_path)
+    assert all(key.upper() != "PSMODULEPATH" for key in environment)
+
+
+@pytest.mark.windows_acl
 @pytest.mark.skipif(os.name != "nt" or not POWERSHELL.is_file(), reason="Windows PowerShell ACL helper test")
-def test_acl_helper_snapshot_and_idempotent_exact_restore(tmp_path):
+def test_acl_helper_snapshot_and_idempotent_exact_restore(tmp_path, windows_acl_capability):
     parent = tmp_path / "parent"; root = parent / "root"; control = parent / "control"
     root.mkdir(parents=True); control.mkdir()
     contract = {

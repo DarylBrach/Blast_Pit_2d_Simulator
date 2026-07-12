@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 import os
 import hashlib
+import re
+import secrets
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -20,6 +23,95 @@ POLICY = REPO / "candidate_container_policy_v1.json"
 def docker_environment() -> dict[str, str]:
     allowed = {"APPDATA", "LOCALAPPDATA", "PATH", "PATHEXT", "SYSTEMROOT", "WINDIR"}
     return {key: value for key, value in os.environ.items() if key.upper() in allowed}
+
+
+def unique_run_id(sequence: int) -> str:
+    """Return a valid run ID that cannot collide with a concurrent test process."""
+    return f"20260711T{sequence:06d}Z-{secrets.token_hex(4)}"
+
+
+def governed_containers_for_run(run_id: str) -> list[str]:
+    """Query only containers owned by this test run, never global daemon state."""
+    result = subprocess.run(
+        [
+            DOCKER,
+            "container",
+            "ls",
+            "--all",
+            "--no-trunc",
+            "--filter",
+            f"label={runtime.CONTAINER_LABEL}=true",
+            "--filter",
+            f"label={runtime.CONTAINER_LABEL}.run-id={run_id}",
+            "--format",
+            "{{.ID}}",
+        ],
+        cwd=REPO,
+        env=docker_environment(),
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        timeout=60,
+        check=True,
+    )
+    values = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    assert all(re.fullmatch(r"[a-f0-9]{64}", value) for value in values)
+    return values
+
+
+def assert_run_containers_absent(run_id: str, timeout: float = 5.0) -> None:
+    """Allow bounded Docker metadata convergence while checking exact ownership."""
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = governed_containers_for_run(run_id)
+        if not remaining:
+            return
+        if time.monotonic() >= deadline:
+            pytest.fail(f"governed candidate containers remain for {run_id}: {remaining}")
+        time.sleep(0.1)
+
+
+@pytest.fixture
+def governed_docker_test_lock():
+    """Serialize destructive lifecycle tests that share the host Docker daemon."""
+    if not DOCKER.is_file():
+        yield
+        return
+    if os.name != "nt":  # pragma: no cover - the governed Docker host is Windows
+        pytest.fail("the governed Docker integration lock requires Windows")
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_mutex = kernel32.CreateMutexW
+    create_mutex.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+    create_mutex.restype = wintypes.HANDLE
+    wait_for_single_object = kernel32.WaitForSingleObject
+    wait_for_single_object.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    wait_for_single_object.restype = wintypes.DWORD
+    release_mutex = kernel32.ReleaseMutex
+    release_mutex.argtypes = [wintypes.HANDLE]
+    release_mutex.restype = wintypes.BOOL
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [wintypes.HANDLE]
+    close_handle.restype = wintypes.BOOL
+
+    handle = create_mutex(None, False, "Local\\AdlerBaer.BlastPit.GovernedDockerTests.v1")
+    if not handle:
+        raise OSError(ctypes.get_last_error(), "CreateMutexW failed for governed Docker test lock")
+    acquired = False
+    try:
+        result = wait_for_single_object(handle, 120_000)
+        if result not in {0x00000000, 0x00000080}:  # WAIT_OBJECT_0 or WAIT_ABANDONED
+            if result == 0x00000102:
+                pytest.fail("timed out waiting for the governed Docker test lock")
+            raise OSError(ctypes.get_last_error(), f"WaitForSingleObject failed: {result:#x}")
+        acquired = True
+        yield
+    finally:
+        if acquired and not release_mutex(handle):
+            raise OSError(ctypes.get_last_error(), "ReleaseMutex failed for governed Docker test lock")
+        close_handle(handle)
 
 
 def test_container_policy_is_exact_and_rejects_drift(tmp_path):
@@ -56,7 +148,8 @@ def test_container_mount_tree_rejects_hardlinks(tmp_path):
 
 
 @pytest.mark.skipif(not DOCKER.is_file(), reason="Docker Desktop is required by the governed candidate runtime")
-def test_authorization_bound_docker_host_and_image_are_live(tmp_path):
+@pytest.mark.docker_host
+def test_authorization_bound_docker_host_and_image_are_live(tmp_path, governed_docker_test_lock):
     expected = runtime.docker_host_identity(
         docker=DOCKER,
         cwd=REPO,
@@ -121,7 +214,9 @@ def test_authorization_bound_docker_host_and_image_are_live(tmp_path):
 
 
 @pytest.mark.skipif(not DOCKER.is_file(), reason="Docker Desktop is required by the governed candidate runtime")
-def test_live_container_canary_blocks_native_extension_host_escape(tmp_path):
+@pytest.mark.docker_host
+def test_live_container_canary_blocks_native_extension_host_escape(tmp_path, governed_docker_test_lock):
+    run_id = unique_run_id(0)
     workspace = tmp_path / "workspace"
     registry = tmp_path / "registry"
     evidence = tmp_path / "evidence"
@@ -134,7 +229,7 @@ def test_live_container_canary_blocks_native_extension_host_escape(tmp_path):
         policy_path=POLICY,
         workspace_root=workspace,
         canary_source=REPO / "improvement_container_canary.py",
-        run_id="20260711T000000Z-abcdef12",
+        run_id=run_id,
         cycle=0,
         authorization_sha256="a" * 64,
         registry_dir=registry,
@@ -161,19 +256,18 @@ def test_live_container_canary_blocks_native_extension_host_escape(tmp_path):
         assert probes[label]["succeeded"] is False
     assert probes["native_process_contained"]["succeeded"] is True
     assert probes["output_write_cycle"]["succeeded"] is True
-    assert runtime.list_governed_containers(
-        docker=DOCKER,
-        cwd=REPO,
-        environment=docker_environment(),
-        timeout=60,
-    ) == []
+    assert_run_containers_absent(run_id)
     lifecycle = next(evidence.glob("*_container_lifecycle.json"))
-    assert json.loads(lifecycle.read_text())["state"] == "REMOVED"
+    lifecycle_value = json.loads(lifecycle.read_text())
+    assert lifecycle_value["run_id"] == run_id
+    assert lifecycle_value["state"] == "REMOVED"
+    assert lifecycle_value["cleanup"]["absence_verified"] is True
 
 
 @pytest.mark.skipif(not DOCKER.is_file(), reason="Docker Desktop is required by the governed candidate runtime")
-def test_durable_lifecycle_recovers_a_leftover_container(monkeypatch, tmp_path):
-    run_id = "20260711T000001Z-abcdef12"
+@pytest.mark.docker_host
+def test_durable_lifecycle_recovers_a_leftover_container(monkeypatch, tmp_path, governed_docker_test_lock):
+    run_id = unique_run_id(1)
     run_workspace = tmp_path / run_id
     mounted = run_workspace / "mounted"
     mounted.mkdir(parents=True)
@@ -203,7 +297,7 @@ def test_durable_lifecycle_recovers_a_leftover_container(monkeypatch, tmp_path):
             timeout=60,
             evidence=evidence / "command.json",
         )
-    assert len(runtime.list_governed_containers(docker=DOCKER, cwd=REPO, environment=docker_environment(), timeout=60)) == 1
+    assert len(governed_containers_for_run(run_id)) == 1
     monkeypatch.setattr(runtime, "_remove_container", original_remove)
     recovered = runtime.recover_governed_containers(
         docker=DOCKER,
@@ -215,6 +309,7 @@ def test_durable_lifecycle_recovers_a_leftover_container(monkeypatch, tmp_path):
         run_id=run_id,
     )
     assert len(recovered) == 1 and recovered[0]["removed"] is True
+    assert_run_containers_absent(run_id)
     record = json.loads(next(run_workspace.glob("container-*.json")).read_text())
     assert record["state"] == "REMOVED_RECOVERY"
     runtime.assert_governed_containers_quiescent(
@@ -229,8 +324,9 @@ def test_durable_lifecycle_recovers_a_leftover_container(monkeypatch, tmp_path):
 
 
 @pytest.mark.skipif(not DOCKER.is_file(), reason="Docker Desktop is required by the governed candidate runtime")
-def test_container_timeout_removes_the_workload_and_verifies_absence(tmp_path):
-    run_id = "20260711T000004Z-abcdef12"
+@pytest.mark.docker_host
+def test_container_timeout_removes_the_workload_and_verifies_absence(tmp_path, governed_docker_test_lock):
+    run_id = unique_run_id(4)
     run_workspace = tmp_path / run_id
     mounted = run_workspace / "mounted"
     mounted.mkdir(parents=True)
@@ -254,12 +350,7 @@ def test_container_timeout_removes_the_workload_and_verifies_absence(tmp_path):
             timeout=3,
             evidence=evidence / "timeout.json",
         )
-    assert runtime.list_governed_containers(
-        docker=DOCKER,
-        cwd=REPO,
-        environment=docker_environment(),
-        timeout=60,
-    ) == []
+    assert_run_containers_absent(run_id)
     lifecycle = json.loads(next(evidence.glob("*_container_lifecycle.json")).read_text())
     assert lifecycle["state"] == "REMOVED" and lifecycle["cleanup"]["absence_verified"] is True
 

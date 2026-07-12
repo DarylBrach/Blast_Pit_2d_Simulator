@@ -251,9 +251,9 @@ def test_build_result_is_schema_valid_toolless_and_exactly_scoped():
         v2.verify_build_result(cfg, row)
 
 
-def test_shipped_v2_authorization_binds_every_control_cli_role_and_root():
+def shipped_authorization_config() -> v2.Config:
     codex = (Path(os.environ["APPDATA"]) / "npm" / "codex.cmd").resolve()
-    cfg = v2.Config(
+    return v2.Config(
         repo=REPO,
         python=Path(sys.executable),
         codex=codex,
@@ -276,6 +276,52 @@ def test_shipped_v2_authorization_binds_every_control_cli_role_and_root():
         dry_run=False,
         resume_run=None,
     )
+
+
+def test_shipped_v2_authorization_statically_binds_every_control_cli_role_and_root(monkeypatch):
+    cfg = shipped_authorization_config()
+    shipped = v2.strict_json(cfg.authorization, max_bytes=128_000)
+    real_sha256_file = v2.legacy.sha256_file
+    executable_hash_calls: set[str] = set()
+    docker_identity_calls: list[dict[str, object]] = []
+
+    def authorized_executable_hash(path: Path) -> str:
+        candidate = Path(path)
+        if candidate == cfg.codex:
+            executable_hash_calls.add("codex")
+            return str(shipped["codex_launcher_sha256"])
+        if candidate == cfg.docker:
+            executable_hash_calls.add("docker")
+            return str(shipped["docker_executable_sha256"])
+        return real_sha256_file(candidate)
+
+    def authorized_docker_identity(**kwargs: object) -> dict[str, object]:
+        docker_identity_calls.append(kwargs)
+        return {"schema_version": "blast-pit.docker-host-identity.v1", **shipped["docker_host_identity"]}
+
+    monkeypatch.setattr(v2, "codex_version", lambda _config: str(shipped["codex_cli_version"]))
+    monkeypatch.setattr(v2.legacy, "sha256_file", authorized_executable_hash)
+    monkeypatch.setattr(
+        v2.runtime,
+        "docker_host_identity",
+        authorized_docker_identity,
+    )
+    record, authorization_hash, cli_version = v2.load_authorization(cfg)
+    assert record["controller_version"] == v2.VERSION
+    assert cli_version == "codex-cli 0.128.0"
+    assert authorization_hash == v2.legacy.canonical_text_sha256(cfg.authorization)
+    assert all(record[key] == value for key, value in v2.expected_control_hashes(cfg).items())
+    assert executable_hash_calls == {"codex", "docker"}
+    assert len(docker_identity_calls) == 1 and docker_identity_calls[0]["docker"] == cfg.docker
+
+
+@pytest.mark.governed_host
+@pytest.mark.skipif(
+    os.environ.get("BLAST_PIT_RUN_GOVERNED_HOST_TESTS") != "1",
+    reason="requires the exact authorization-bound Codex CLI, Docker host, and attested image",
+)
+def test_shipped_v2_authorization_live_governed_host_binding():
+    cfg = shipped_authorization_config()
     record, authorization_hash, cli_version = v2.load_authorization(cfg)
     assert record["controller_version"] == v2.VERSION
     assert cli_version == "codex-cli 0.128.0"

@@ -64,7 +64,7 @@ Recover acquires the same kernel lock, validates fixed paths and the per-lease a
 
 Historical v2.1 used a Windows audit guard and raw-versus-guarded canary. That mechanism is defense in depth only under v2.2 and is not the candidate hard boundary.
 
-Ten cycles means up to ten attempts before the deadline. `10/10` means 100/100 and only readiness for human review. Current code qualification is 240 passed with 2 platform skips. Supported historical DryRun qualification is runner `20260712T005801Z` / controller `20260712T005807Z-709f67a4`; DryRun does not execute candidate build, tests, training, scoring, panel, or final QA. First live run `20260711T223022Z-1128b831` remains unanchored diagnostic evidence.
+Ten cycles means up to ten attempts before the deadline. `10/10` means 100/100 and human review only. Current local qualification is 241 passed/3 skipped in 54.65 seconds; governed-host live binding separately passes 1/1. Historical DryRun evidence remains preserved; current supported DryRun is runner `20260712T014740Z-04461e70` / controller `20260712T014742Z-2a8b7152`.
 
 ## Controller v2.2 Docker operation
 

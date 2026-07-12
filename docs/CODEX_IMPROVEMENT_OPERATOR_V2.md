@@ -123,7 +123,7 @@ Recover is not a read-only operator command. It acquires the controller kernel l
 
 The controller evidence root is `_codex_improvement_evidence_2d_Simulator`, candidate worktrees are `_codex_improvement_worktrees_2d_Simulator`, and supervisor evidence is `_codex_light_runner_evidence_2d_Simulator`, all beside the protected checkout.
 
-Run `20260711T223022Z-1128b831` remains an unanchored failed diagnostic example. Supported DryRun runner `20260712T005801Z` resolved latest controller run `20260712T005807Z-709f67a4`, whose sealed decision is `DRY_RUN_COMPLETE`/`NOT_RUN`, not review-ready. It proves preflight, isolation qualification, container quiescence, ACL restoration, production protection, sealing, and local-ledger/latest publication; it does not prove candidate tests, training, scoring, specialist consensus, or final QA. That retained run predates v3.1 supervisor sealing; current qualification is 240 passed with 2 platform skips.
+Run `20260711T223022Z-1128b831` remains unanchored historical diagnostic evidence; pre-v3.1 DryRun `20260712T005807Z-709f67a4` also remains retained. Current local qualification is 241 passed/3 skipped in 54.65 seconds, and governed-host live binding separately passes 1/1 with `BLAST_PIT_RUN_GOVERNED_HOST_TESTS=1`. Current supported DryRun is runner `20260712T014740Z-04461e70` / controller `20260712T014742Z-2a8b7152`; its verified decision is `DRY_RUN_COMPLETE`/`NOT_RUN`, not review-ready.
 
 ## Security boundary
 
