@@ -4,6 +4,7 @@ __pycache__/
 .supervisor_stop
 .supervisor_stop.*
 run_evidence/
+improvement_runs/
 artifacts/v37/robustness-v37-8h-*/
 *.tmp
 *.log

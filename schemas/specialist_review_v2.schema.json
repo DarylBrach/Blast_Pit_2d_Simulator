@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adlerbaer.local/schemas/specialist_review_v2.schema.json",
+  "title": "Codex Improvement Specialist Review v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "role", "diff_sha256", "verdict", "criteria", "findings", "assumptions"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "codex.specialist-review.v2"},
+    "role": {"type": "string", "enum": ["architecture_state", "algorithm_objective", "workflow_state", "governance_evidence", "security_sandbox", "testing_reliability", "docs_ux"]},
+    "diff_sha256": {"$ref": "#/$defs/sha256"},
+    "verdict": {"type": "string", "enum": ["PASS", "CHANGES_REQUIRED", "BLOCK"]},
+    "criteria": {"type": "array", "minItems": 1, "maxItems": 50, "items": {"$ref": "#/$defs/criterion"}},
+    "findings": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/finding"}},
+    "assumptions": {"type": "array", "maxItems": 50, "items": {"$ref": "#/$defs/text"}}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "text": {"type": "string", "minLength": 1, "maxLength": 1500},
+    "criterion": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "pass", "evidence"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{1,63}$"},
+        "pass": {"type": "boolean"},
+        "evidence": {"$ref": "#/$defs/text"}
+      }
+    },
+    "finding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "severity", "category", "file", "line", "evidence", "impact", "remediation", "test"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,31}-[0-9]{3}$", "maxLength": 36},
+        "severity": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]},
+        "category": {"type": "string", "enum": ["architecture", "algorithm", "workflow", "governance", "evidence", "security", "testing", "documentation", "ux"]},
+        "file": {"type": ["string", "null"], "maxLength": 500},
+        "line": {"type": ["integer", "null"], "minimum": 1, "maximum": 10000000},
+        "evidence": {"$ref": "#/$defs/text"},
+        "impact": {"$ref": "#/$defs/text"},
+        "remediation": {"$ref": "#/$defs/text"},
+        "test": {"$ref": "#/$defs/text"}
+      }
+    }
+  }
+}

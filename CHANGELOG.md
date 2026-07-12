@@ -1,5 +1,33 @@
 # Changelog
 
+- Upgraded CodexLightRunner to v3.1 with manifest v2 exact directory/file sealing, kernel locks, publication-WAL recovery, terminal/name-binding hash-chain ledgers, and `name_binding_hash`. Current local suite: 242 passed/3 skipped in 55.26 seconds; focused runner: 27 passed; governed-host live binding: 1/1 with `BLAST_PIT_RUN_GOVERNED_HOST_TESTS=1`. Hosted CI runs mandatory static authorization validation and a capability-gated sanitized Windows ACL integration attempt, separate from governed-host Codex/Docker/image qualification. ACL helper subprocess tests use the same bounded Job Object runner as production so descendant pipe handles cannot hang CI. Live Docker tests use unique run labels, run-scoped assertions, and a daemon-scoped test mutex; the two-process recovery concurrency proof passed 2/2. The draft PR must retain a passing GitHub `tests` check before merge. Post-v3.1 DryRun runner `20260712T014740Z-04461e70` / controller `20260712T014742Z-2a8b7152` remains the retained operational record.
+
+- Replaced the v2.1 Python audit-hook candidate boundary with controller v2.2's authorization-bound Linux Docker boundary. Compile, tests, training, and trusted scoring use immutable image `sha256:ebecafb90288df12553cb8b66e0bc2a3ce325513a19f65e40e5ce9e526db0698`, tied to `candidate_image_attestation_v1.json` and the hash-locked image recipe.
+- Made the single disposable-workspace bind read-only. Candidate writes are limited to bounded 256 MiB `/tmp` and `/output` tmpfs mounts. Training artifacts return only through the trusted bounded stdout exporter, which validates safe relative paths, per-file SHA-256, and base64 before materialization.
+- Added durable governed-container lifecycle evidence and container-first recovery before ACL recovery. Historical own-lock failure and pre-v3.1 DryRun remain retained. Current local qualification is 242 passed/3 skipped; governed-host live binding separately passes 1/1.
+
+- Hardened the improvement harness to controller v2.1 with a child-only inheritance-only `DELETE` ACL lease, exact multiset restricted-SID discovery, durable `APPLYING` write-ahead state, a kernel controller lock, startup and emergency lease recovery, a per-lease hash-pinned recovery-helper archive, separately sealed/hash-chain-ledgered recovery events, and exact SDDL restoration before production guard, sealing, or publication.
+- Added a candidate Python audit guard that denies socket/process operations, external reads/writes, and path mutations outside candidate roots; the complete gate now combines the trusted protected-harness suite with the guarded complete v37 candidate tests. Expanded the raw filesystem canary with lease-root delete, `WRITE_DAC`, `WRITE_OWNER`, rename, hardlink, and symlink probes, while separately recording raw OS network capability and effective guard denial without conflating them.
+- Retained first live run `20260711T223022Z-1128b831` as unanchored diagnostic failure evidence: it failed closed before canary on CLI atomic-delete behavior and did not modify production.
+
+- Added the governed v2 tool-less improvement harness with seven independent specialist roles, final QA, paired private Fold B and held-out Fold C evaluation, qualified unelevated Windows sandboxing, kill-on-close Job Objects, transition/cycle/run manifests, and a local tamper-evident ledger.
+- Added supported Run, DryRun, Status, Review, Verify, Stop, and terminal-only InspectTerminal launcher modes with an eight-hour outer supervisor cap.
+- Added strict read-only operator decisions: execution success is separate from human-review readiness, and promotion/release authority is always false.
+- Qualified the frozen v2 source with the launch interpreter: 188 tests passed; two symlink-containment tests skipped because this Windows host does not permit symlink creation. Python compilation and PowerShell launcher parsing passed.
+
+- Added a CodexLightRunner-supervised, worktree-isolated Codex improvement controller with structured proposals, security and test gates, trusted deterministic scoring, and candidate-branch-only retention.
+- Bound the controller to an expiring parent human authorization and explicitly labeled disposable fixture records as controller development delegations.
+- Added an eight-hour supervisor/authorization ceiling, minimal and redacted Codex environment, raw-filesystem comparison, pre/post production evidence, and recursive SHA-256 evidence sealing.
+- Carried accepted and rejected lessons across multiple completed controller runs, including summaries, risks, scores, and raw-gate failures.
+- Compacted multi-run lessons to decision-relevant metrics and bounded text so Windows can launch Codex reliably.
+- Bounded the combined cross-run and same-run lesson window to the six most recent cycles, preventing Windows command-line overflow late in long controller runs.
+- Completed ten-cycle controller run `20260711T183548Z` with a successful supervisor result, six controller-accepted cycles, four rejected cycles, 89 final-candidate tests, unchanged production, and a fully revalidated 206-file evidence seal.
+- Recorded final-QA rejection of cycle 10 commit `ff38a1b`: an algorithmic Hall-of-Fame promotion change self-labeled as process and bypassed the v1.1 improvement threshold. Retained evidence remains immutable; `de3be87` is the last pre-failure v1.1 accepted ancestor, is not v1.2-revalidated, and remains pending human review.
+- Fail-closed every simulator-source change as effective category `algorithm`, regardless of the proposing agent's label, so renamed or novel training behavior cannot bypass the improvement threshold.
+- Redirected Codex `TEMP`/`TMP` and cooperative disposable work to an evidence-sealed per-cycle scratch directory; the prompt forbids other paths, while documentation explicitly retains the elevated-backend containment limitation.
+- Preserved the immutable v1.1 authorization and added a separate hash-linked v1.2 authorization amendment selected by the launcher.
+- Validated the shipped v1.2 amendment and controller through supported-launcher dry run `20260711T200515Z`; baseline evaluation, production guard, evidence sealing, and runner classification all passed.
+
 ## v35
 
 - Added concise checkpoint `status` output and actionable fresh-train collision recovery guidance.

@@ -22,3 +22,13 @@ The following checklist remains release qualification work; unchecked narrative 
 - Confirm the source contains no network or subprocess calls.
 - Record benchmark, ZIP SHA-256, and release inventory.
 - Exclude `.venv`, caches, temporary artifacts, and real audit outputs from distribution.
+
+## Improvement harness v2 QA boundary
+
+A v2 result is review-ready only when the root decision is 100/100 with every deterministic gate, all seven specialists, independent final QA, Fold C evaluation, and production protection passing. Status `COMPLETE` alone is insufficient. `COMPLETE_WITH_REJECTIONS` may represent successful controller execution but remains subject to the root decision. No harness QA result authorizes production use or release.
+
+Historical v2.1 QA does not qualify v2.2. `10/10` means 100/100 and human review only. Current local qualification is 242 passed with 3 reported skips; governed-host live binding separately passes 1/1.
+
+For v2.2, final QA requires the immutable image attestation and recipe, Docker host identity and exact policy, read-only workspace, bounded tmpfs, trusted exporter validation, native canary, lifecycle/quiescence and container recovery, then ACL recovery and exact-SDDL ordering. `10/10` remains 100/100 and human review only.
+
+Runner v3.1 QA requires manifest v2, a unique terminal-ledger anchor, valid name binding, no WAL, and an authoritative pointer. Final local qualification is 242 passed/3 skipped in 55.26 seconds; focused runner is 27 passed. Hosted CI's mandatory static authorization validation, capability-gated ACL integration attempt, and retained governed-host qualification are separate claims. Post-v3.1 DryRun `20260712T014742Z-2a8b7152` remains 0/100 and `NOT_RUN`; it is not candidate QA.

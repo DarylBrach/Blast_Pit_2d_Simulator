@@ -1,0 +1,84 @@
+{
+  "schema_version": "blast-pit.candidate-image-attestation.v1",
+  "status": "human-reviewed-local-build",
+  "generated_utc": "2026-07-12T00:42:34Z",
+  "project": "Blast_Pit_2d_Simulator",
+  "image_tag": "blast-pit-candidate-runtime:2.2.0",
+  "image_id": "sha256:ebecafb90288df12553cb8b66e0bc2a3ce325513a19f65e40e5ce9e526db0698",
+  "repo_digests": [
+    "blast-pit-candidate-runtime@sha256:ebecafb90288df12553cb8b66e0bc2a3ce325513a19f65e40e5ce9e526db0698"
+  ],
+  "base_image": "python@sha256:8a7e7cc04fd3e2bd787f7f24e22d5d119aa590d429b50c95dfe12b3abe52f48b",
+  "build_inputs": {
+    "Dockerfile.candidate": "2da245cd6bb5c6eeca148b4dbfc421f412488c76f0d0499156771687d068a6e6",
+    "Dockerfile.candidate.dockerignore": "9acde5dd905fa566d6603fa2098f4ea03123cffb9f83624d4e51f80bac337671",
+    "requirements-candidate.lock": "94db2466a4d97f02e54e18394d564f6ea3e330c13971f442d7809d5200862fcb",
+    "build_candidate_container.ps1": "b23a7fc3a6429bafa9ebb1f3ed1c29ae354448166fc564b1177893bab525db79"
+  },
+  "build_tools": {
+    "docker_client": "29.6.1",
+    "docker_server": "29.6.1",
+    "docker_api": "1.55",
+    "docker_context": "desktop-linux",
+    "docker_desktop": "4.80.0 (232116)",
+    "buildx": "v0.35.0-desktop.2",
+    "buildx_commit": "b554ce1decd8b509893b1e7c6227eabfb923d094"
+  },
+  "image_config": {
+    "os": "linux",
+    "architecture": "amd64",
+    "size_bytes": 155582139,
+    "user": "65532:65532",
+    "working_dir": "/workspace",
+    "entrypoint": null,
+    "cmd": ["python", "--version"],
+    "environment": [
+      "PYTHONNOUSERSITE=1",
+      "PYTHONDONTWRITEBYTECODE=1",
+      "PYTHONHASHSEED=0",
+      "PYGAME_HIDE_SUPPORT_PROMPT=1",
+      "SDL_VIDEODRIVER=dummy",
+      "SDL_AUDIODRIVER=dummy"
+    ],
+    "rootfs_layers": [
+      "sha256:b05a96227958df6091396f6fbd5aa4616df631a65626ac8688c91cfa70d1a7e6",
+      "sha256:b562739fbd38fe985aa5838943a5ff85a0cd5e1bcd36e723e085059e7d2419d1",
+      "sha256:9108cc89ef71057584d87f3fa8c9ca1201b50f1241e83032f236ca8fc4b2d087",
+      "sha256:a5c523b59430854cc65730831317bde138bf1343e9a3da014dca419aa58d8138",
+      "sha256:47b0549a565e7b456d8fc2730aed30d8240b3954288956375b7236038de32aef",
+      "sha256:9651dda9779bad75ad7948d85bab4e20f445adc5b92272cf0f4cfff785d90a8a",
+      "sha256:6e5b20291c8b2116f8027a37763df6986383a363599c9bc2e51a32b7c4239828"
+    ],
+    "history_sha256": "6bbb265e874dc2cd4726095421a735f674ada5949764dc463213b78033f5514b"
+  },
+  "python_package_sbom": [
+    {"name": "attrs", "version": "24.2.0", "source": "hash-locked"},
+    {"name": "iniconfig", "version": "2.3.0", "source": "hash-locked"},
+    {"name": "jsonschema", "version": "4.26.0", "source": "hash-locked"},
+    {"name": "jsonschema-specifications", "version": "2025.9.1", "source": "hash-locked"},
+    {"name": "llvmlite", "version": "0.48.0", "source": "hash-locked"},
+    {"name": "numba", "version": "0.66.0", "source": "hash-locked"},
+    {"name": "numpy", "version": "2.2.0", "source": "hash-locked"},
+    {"name": "packaging", "version": "25.0", "source": "hash-locked"},
+    {"name": "pip", "version": "25.0.1", "source": "approved-base-tooling"},
+    {"name": "pluggy", "version": "1.6.0", "source": "hash-locked"},
+    {"name": "pygame", "version": "2.6.1", "source": "hash-locked"},
+    {"name": "Pygments", "version": "2.20.0", "source": "hash-locked"},
+    {"name": "pytest", "version": "9.1.1", "source": "hash-locked"},
+    {"name": "referencing", "version": "0.37.0", "source": "hash-locked"},
+    {"name": "rpds-py", "version": "2026.6.3", "source": "hash-locked"},
+    {"name": "typing_extensions", "version": "4.15.0", "source": "hash-locked"}
+  ],
+  "review_assertions": {
+    "base_image_digest_pinned": true,
+    "wheel_hashes_required": true,
+    "dependencies_installed_without_resolution": true,
+    "pip_check_passed": true,
+    "installed_packages_equal_lock_plus_approved_base_tooling": true,
+    "non_root_user": true,
+    "runtime_never_builds_or_pulls": true,
+    "authorization_renewal_required_for_any_image_or_tool_drift": true
+  },
+  "signature": null,
+  "notes": "This same-machine provenance record and the local image ID are hash-bound by the human authorization. It is not a registry signature or remote transparency-log attestation."
+}
