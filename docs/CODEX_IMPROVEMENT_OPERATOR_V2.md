@@ -123,8 +123,10 @@ Recover is not a read-only operator command. It acquires the controller kernel l
 
 The controller evidence root is `_codex_improvement_evidence_2d_Simulator`, candidate worktrees are `_codex_improvement_worktrees_2d_Simulator`, and supervisor evidence is `_codex_light_runner_evidence_2d_Simulator`, all beside the protected checkout.
 
-Run `20260711T223022Z-1128b831` is intentionally not a success example. It failed before canary on CLI atomic-delete behavior, retained unchanged-production diagnostic files, and was not anchored in the local ledger. Verify must therefore fail closed for that run. Final v2.2 suite totals, live container qualification, and successful DryRun evidence are pending.
+Run `20260711T223022Z-1128b831` remains an unanchored failed diagnostic example. Supported DryRun runner `20260712T005801Z` resolved latest controller run `20260712T005807Z-709f67a4`, whose sealed decision is `DRY_RUN_COMPLETE`/`NOT_RUN`, not review-ready. It proves preflight, isolation qualification, container quiescence, ACL restoration, production protection, sealing, and local-ledger/latest publication; it does not prove candidate tests, training, scoring, specialist consensus, or final QA. That retained run predates v3.1 supervisor sealing; current qualification is 240 passed with 2 platform skips.
 
 ## Security boundary
 
 Verification proves internal consistency of retained files and local run, container-recovery, and ACL-recovery ledgers; it is not a digital signature and does not prove the Docker daemon, host kernel, or operating-system account was uncompromised. Use a dedicated host or VM when stronger host isolation is required.
+
+Runner v3.1 evidence is independently sealed. Use ledger-bound `<name>_terminal.json`, not advisory/live `<name>_state.json`, for terminal disposition. The pointer binds manifest/state hashes and the terminal row's `ledger_hash`; that row records `name_binding_hash`. A pending publication WAL blocks publish-complete verification; startup recovery precedes allocation. Local ledgers are tamper evidence, not signatures. A post-v3.1 supported DryRun remains pending.

@@ -15,7 +15,7 @@
   "candidate_export_source_sha256": "d27e8673c02a94f10861076fe7e99df392c6887f8b35090c5f83143cf70f9a7d",
   "v2_scorer_source_sha256": "c0835e778e2daf38a9551e0935bdf929fba91cad1e5628a84af8abe244e3e255",
   "operator_source_sha256": "128812b9e47f262970c8c6dcb2c87ab2d349b9f1a2619466665cdf3a10f8ded6",
-  "supervisor_source_sha256": "7bf94043b63e8a5a047a39d31d0e833ba02fc81e373620b79b0ca944b5388ee5",
+  "supervisor_source_sha256": "fd9aef4b94787a274bc76eefd2036833d7e20cafd7636a1dd844a58538c54174",
   "launcher_source_sha256": "6b89c7baa79ce82d3f1abbbd65454c02fe45057d57ad696f67e78fce2387cbe0",
   "launcher_bat_source_sha256": "000bb5d421bab1f1c3303b35702a7ef816782aae1c2084b479cf8b3bf9c9e7be",
   "canary_source_sha256": "32934d3adf72196923802232e48f259e417ecb283a3095e28329bb722ea47e16",

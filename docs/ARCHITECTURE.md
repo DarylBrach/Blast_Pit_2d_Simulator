@@ -22,4 +22,8 @@ The container receives one read-only bind of the disposable workspace. Its only 
 
 Container lifecycle intent is fsynced before Docker create. Normal, startup, emergency, and Recover paths remove governed containers and verify absence before restoring ACL leases. Unresolved container or ACL recovery independently blocks readiness and publication.
 
+## Supervisor evidence plane
+
+Runner v3.1 seals supervisor evidence independently from controller evidence. Manifest v2 inventories exact directories/files. Kernel locks control matching-run exclusion and serialize publication. WAL phases cover intent, terminal-ledger anchoring, pointer publication, verification, and removal. A separate hash-chain ledger permanently binds runner name to target; each terminal row records the matching binding record's `name_binding_hash`. Startup recovers before allocating a run. `_terminal` is authoritative; `_state` is advisory/live.
+
 The architecture produces local candidate commits and sealed human-review evidence only. It has no production-training, merge, push, audit, promotion, export, or release path.
